@@ -1,0 +1,142 @@
+.room-card {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  position: relative;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  cursor: default;
+}
+
+.room-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.room-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.room-card__code {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: 0.03em;
+}
+
+.room-card__priority {
+  font-size: 14px;
+  cursor: default;
+}
+
+.room-card__title {
+  font-size: 13px;
+  color: #374151;
+  margin: 0 0 6px;
+  font-weight: 500;
+}
+
+.room-card__notes {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0 0 6px;
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.room-card__meta {
+  font-size: 11px;
+  color: #6b7280;
+  margin: 0 0 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.room-card__meta-icon {
+  font-size: 12px;
+}
+
+.room-card__ready-info {
+  background: #f0fdf4;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 6px 0;
+}
+
+.room-card__footer {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.room-card__status-wrapper {
+  position: relative;
+}
+
+.room-card__status-btn {
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.room-card__status-btn:hover {
+  opacity: 0.85;
+}
+
+.room-card__status-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  min-width: 160px;
+  z-index: 100;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.room-card__status-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.room-card__status-menu-item:hover {
+  background: #f3f4f6;
+}
+
+.room-card__status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.room-card__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
