@@ -1,0 +1,270 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
+import '../../application/notifiers/notifiers.dart';
+import '../../domain/domain.dart';
+
+const _uuid = Uuid();
+
+class UsersPage extends ConsumerWidget {
+  const UsersPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final usersAsync = ref.watch(usersProvider);
+    final propsAsync = ref.watch(propertiesProvider);
+
+    return usersAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Error: $e')),
+        data: (users) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  const Text('Usuarios',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                  const Spacer(),
+                  FilledButton.icon(
+                    onPressed: () => _showEditor(context, ref, null, propsAsync.valueOrNull ?? []),
+                    icon: const Icon(Icons.person_add_outlined, size: 16),
+                    label: const Text('Añadir'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF2563EB),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      textStyle: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                itemCount: users.length,
+                separatorBuilder: (context, idx) => const Divider(height: 1),
+                itemBuilder: (_, i) => _UserTile(
+                  user: users[i],
+                  properties: propsAsync.valueOrNull ?? [],
+                  onEdit: () => _showEditor(context, ref, users[i], propsAsync.valueOrNull ?? []),
+                  onDelete: () => ref.read(usersProvider.notifier).deleteUser(users[i].id),
+                ),
+              ),
+            ),
+          ],
+        ),
+    );
+  }
+
+  void _showEditor(BuildContext context, WidgetRef ref, AppUser? existing, List<Property> props) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _UserEditorSheet(existing: existing, properties: props, ref: ref),
+    );
+  }
+}
+
+class _UserTile extends StatelessWidget {
+  const _UserTile({
+    required this.user,
+    required this.properties,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final AppUser user;
+  final List<Property> properties;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final assigned = properties.where((p) => user.assignedPropertyIds.contains(p.id)).toList();
+
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: _roleColor(user.role),
+        child: Text(user.initials, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+      ),
+      title: Text(user.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(_roleLabel(user.role), style: const TextStyle(fontSize: 12)),
+          if (assigned.isNotEmpty)
+            Text(
+              assigned.map((p) => p.code).join(', '),
+              style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+            ),
+        ],
+      ),
+      isThreeLine: assigned.isNotEmpty,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(icon: const Icon(Icons.edit_outlined, size: 18), onPressed: onEdit),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFEF4444)),
+            onPressed: onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────
+//  User editor bottom sheet
+// ─────────────────────────────────────────
+
+class _UserEditorSheet extends StatefulWidget {
+  const _UserEditorSheet({required this.existing, required this.properties, required this.ref});
+
+  final AppUser? existing;
+  final List<Property> properties;
+  final WidgetRef ref;
+
+  @override
+  State<_UserEditorSheet> createState() => _UserEditorSheetState();
+}
+
+class _UserEditorSheetState extends State<_UserEditorSheet> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _initialsCtrl;
+  late UserRole _role;
+  late Set<String> _assignedIds;
+
+  @override
+  void initState() {
+    super.initState();
+    final u = widget.existing;
+    _nameCtrl = TextEditingController(text: u?.name ?? '');
+    _initialsCtrl = TextEditingController(text: u?.initials ?? '');
+    _role = u?.role ?? UserRole.cleaning;
+    _assignedIds = Set.from(u?.assignedPropertyIds ?? []);
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _initialsCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              widget.existing == null ? 'Nuevo usuario' : 'Editar usuario',
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _nameCtrl,
+              decoration: const InputDecoration(labelText: 'Nombre completo'),
+              textCapitalization: TextCapitalization.words,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _initialsCtrl,
+              decoration: const InputDecoration(labelText: 'Iniciales (2 caracteres)'),
+              maxLength: 3,
+              textCapitalization: TextCapitalization.characters,
+            ),
+            const SizedBox(height: 4),
+            const Text('Rol', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: UserRole.values.map((r) {
+                return ChoiceChip(
+                  label: Text(_roleLabel(r)),
+                  selected: _role == r,
+                  onSelected: (_) => setState(() => _role = r),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+            const Text('Propiedades asignadas', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: widget.properties.map((p) {
+                final sel = _assignedIds.contains(p.id);
+                return FilterChip(
+                  label: Text(p.code),
+                  selected: sel,
+                  onSelected: (v) => setState(() {
+                    if (v) {
+                      _assignedIds.add(p.id);
+                    } else {
+                      _assignedIds.remove(p.id);
+                    }
+                  }),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _save,
+                child: const Text('Guardar'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _save() {
+    if (_nameCtrl.text.trim().isEmpty) return;
+    final user = AppUser(
+      id: widget.existing?.id ?? _uuid.v4(),
+      name: _nameCtrl.text.trim(),
+      initials: _initialsCtrl.text.trim().toUpperCase(),
+      role: _role,
+      assignedPropertyIds: _assignedIds.toList(),
+    );
+    widget.ref.read(usersProvider.notifier).saveUser(user);
+    Navigator.pop(context);
+  }
+}
+
+// ─────────────────────────────────────────
+//  Helpers
+// ─────────────────────────────────────────
+
+Color _roleColor(UserRole role) {
+  switch (role) {
+    case UserRole.admin:
+      return const Color(0xFF2563EB);
+    case UserRole.cleaning:
+      return const Color(0xFF10B981);
+    case UserRole.maintenance:
+      return const Color(0xFFF59E0B);
+  }
+}
+
+String _roleLabel(UserRole role) {
+  switch (role) {
+    case UserRole.admin:
+      return 'Admin';
+    case UserRole.cleaning:
+      return 'Limpieza';
+    case UserRole.maintenance:
+      return 'Mantenimiento';
+  }
+}

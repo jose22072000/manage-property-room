@@ -1,0 +1,232 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../../application/notifiers/notifiers.dart';
+import '../../../domain/domain.dart';
+import '../../../permissions/policy.dart';
+import '../../../core/responsive.dart';
+import 'toast.dart';
+import 'user_selector.dart';
+
+class AppShell extends ConsumerWidget {
+  const AppShell({super.key, required this.child, required this.location});
+  final Widget child;
+  final String location;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isBoardPage = location.contains('/board');
+    final user = ref.watch(currentUserProvider).valueOrNull;
+    return ToastOverlay(
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF9FAFB),
+        body: Column(
+          children: [
+            _AppHeader(user: user, location: location, ref: ref),
+            Expanded(child: child),
+          ],
+        ),
+        bottomNavigationBar: Responsive.isMobile(context) && !isBoardPage
+            ? _BottomNav(user: user, location: location)
+            : null,
+      ),
+    );
+  }
+}
+
+class _AppHeader extends StatelessWidget {
+  const _AppHeader({required this.user, required this.location, required this.ref});
+  final AppUser? user;
+  final String location;
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = Responsive.isMobile(context);
+    final isBoardPage = location.contains('/board');
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+        boxShadow: [BoxShadow(color: Color(0x0A000000), blurRadius: 4, offset: Offset(0, 1))],
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: 56,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                if (isBoardPage && isMobile)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_back, size: 20, color: Color(0xFF9CA3AF)),
+                      onPressed: () => context.go('/'),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
+                  ),
+                GestureDetector(
+                  onTap: () => context.go('/'),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.home_work_outlined, color: Color(0xFF2563EB), size: 22),
+                      if (!isMobile) ...[
+                        const SizedBox(width: 8),
+                        const Text('Gestion de Propiedades',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                      ],
+                    ],
+                  ),
+                ),
+                if (!isMobile) ...[
+                  const SizedBox(width: 24),
+                  _NavLinks(location: location, user: user),
+                ],
+                const Spacer(),
+                if (!isMobile) _ResetButton(ref: ref),
+                const SizedBox(width: 8),
+                UserSelector(compact: isMobile),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavLinkDef {
+  const _NavLinkDef(this.label, this.path);
+  final String label;
+  final String path;
+}
+
+class _NavLinks extends StatelessWidget {
+  const _NavLinks({required this.location, required this.user});
+  final String location;
+  final AppUser? user;
+
+  @override
+  Widget build(BuildContext context) {
+    final canAdmin = user != null && Policy.canBoard(user!, BoardAction.manageUsers);
+    final items = <_NavLinkDef>[
+      const _NavLinkDef('Propiedades', '/'),
+      const _NavLinkDef('Por hacer', '/todo'),
+      const _NavLinkDef('Archivo', '/archive'),
+      const _NavLinkDef('Configuracion', '/settings'),
+      if (canAdmin) const _NavLinkDef('Usuarios', '/users'),
+    ];
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: items.map((item) {
+        final isActive = item.path == '/'
+            ? (location == '/' || location.contains('/board'))
+            : location.startsWith(item.path);
+        return GestureDetector(
+          onTap: () => context.go(item.path),
+          child: Container(
+            margin: const EdgeInsets.only(right: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: isActive ? const Color(0xFFEFF6FF) : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(item.label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: isActive ? const Color(0xFF2563EB) : const Color(0xFF6B7280),
+                )),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _ResetButton extends StatelessWidget {
+  const _ResetButton({required this.ref});
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _doReset(context),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.refresh, size: 15, color: Color(0xFF9CA3AF)),
+            SizedBox(width: 4),
+            Text('Resetear', style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _doReset(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Resetear todos los datos?'),
+        content: const Text('Se borraran los cambios y el historial.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Resetear')),
+        ],
+      ),
+    );
+    if ((ok ?? false) && context.mounted) {
+      ref.invalidate(propertiesProvider);
+      ref.invalidate(usersProvider);
+      ref.invalidate(archiveProvider);
+      ref.invalidate(fieldsProvider);
+    }
+  }
+}
+
+class _BNavItem {
+  const _BNavItem(this.label, this.icon, this.activeIcon, this.route);
+  final String label;
+  final IconData icon;
+  final IconData activeIcon;
+  final String route;
+}
+
+class _BottomNav extends StatelessWidget {
+  const _BottomNav({required this.user, required this.location});
+  final AppUser? user;
+  final String location;
+
+  @override
+  Widget build(BuildContext context) {
+    final canAdmin = user != null && Policy.canBoard(user!, BoardAction.manageUsers);
+    final items = <_BNavItem>[
+      const _BNavItem('Inicio', Icons.home_outlined, Icons.home, '/'),
+      const _BNavItem('Por hacer', Icons.checklist_outlined, Icons.checklist, '/todo'),
+      const _BNavItem('Archivo', Icons.archive_outlined, Icons.archive, '/archive'),
+      const _BNavItem('Ajustes', Icons.settings_outlined, Icons.settings, '/settings'),
+      if (canAdmin) const _BNavItem('Usuarios', Icons.group_outlined, Icons.group, '/users'),
+    ];
+    int idx = items.indexWhere((i) => i.route == location);
+    if (idx < 0) idx = 0;
+    return NavigationBar(
+      selectedIndex: idx,
+      backgroundColor: Colors.white,
+      onDestinationSelected: (i) => context.go(items[i].route),
+      destinations: [
+        for (final item in items)
+          NavigationDestination(icon: Icon(item.icon), selectedIcon: Icon(item.activeIcon), label: item.label),
+      ],
+    );
+  }
+}
