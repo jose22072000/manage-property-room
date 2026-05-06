@@ -68,18 +68,21 @@ class _AppHeader extends StatelessWidget {
                       constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                     ),
                   ),
-                GestureDetector(
-                  onTap: () => context.go('/'),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.home_work_outlined, color: Color(0xFF2563EB), size: 22),
-                      if (!isMobile) ...[
-                        const SizedBox(width: 8),
-                        const Text('Gestion de Propiedades',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => context.go('/'),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.home_work_outlined, color: Color(0xFF2563EB), size: 22),
+                        if (!isMobile) ...[
+                          const SizedBox(width: 8),
+                          const Text('Gestion de Propiedades',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
                 if (!isMobile) ...[
@@ -87,7 +90,6 @@ class _AppHeader extends StatelessWidget {
                   _NavLinks(location: location, user: user),
                 ],
                 const Spacer(),
-                if (!isMobile) _ResetButton(ref: ref),
                 const SizedBox(width: 8),
                 UserSelector(compact: isMobile),
               ],
@@ -126,71 +128,28 @@ class _NavLinks extends StatelessWidget {
         final isActive = item.path == '/'
             ? (location == '/' || location.contains('/board'))
             : location.startsWith(item.path);
-        return GestureDetector(
-          onTap: () => context.go(item.path),
-          child: Container(
-            margin: const EdgeInsets.only(right: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: isActive ? const Color(0xFFEFF6FF) : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
+        return MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: () => context.go(item.path),
+            child: Container(
+              margin: const EdgeInsets.only(right: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: isActive ? const Color(0xFFEFF6FF) : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(item.label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: isActive ? const Color(0xFF2563EB) : const Color(0xFF374151),
+                  )),
             ),
-            child: Text(item.label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: isActive ? const Color(0xFF2563EB) : const Color(0xFF6B7280),
-                )),
           ),
         );
       }).toList(),
     );
-  }
-}
-
-class _ResetButton extends StatelessWidget {
-  const _ResetButton({required this.ref});
-  final WidgetRef ref;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _doReset(context),
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.refresh, size: 15, color: Color(0xFF9CA3AF)),
-            SizedBox(width: 4),
-            Text('Resetear', style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF))),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _doReset(BuildContext context) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Resetear todos los datos?'),
-        content: const Text('Se borraran los cambios y el historial.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-          TextButton(
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Resetear')),
-        ],
-      ),
-    );
-    if ((ok ?? false) && context.mounted) {
-      ref.invalidate(propertiesProvider);
-      ref.invalidate(usersProvider);
-      ref.invalidate(archiveProvider);
-      ref.invalidate(fieldsProvider);
-    }
   }
 }
 

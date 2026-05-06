@@ -1,0 +1,73 @@
+package handlers
+
+import (
+	"net/http"
+
+	"github.com/jose/manage_property_room_api/internal/auth"
+	"github.com/jose/manage_property_room_api/internal/httpx"
+)
+
+type AuthHandler struct {
+	Svc *auth.Service
+}
+
+type loginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	var req loginRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	if req.Email == "" || req.Password == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "email and password required")
+		return
+	}
+	res, err := h.Svc.Login(r.Context(), req.Email, req.Password)
+	if err != nil {
+		httpx.HandleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, res)
+}
+
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	uid := httpx.UserIDFrom(r.Context())
+	res, err := h.Svc.Refresh(r.Context(), uid)
+	if err != nil {
+		httpx.HandleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, res)
+}
+
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	// Stateless JWT — client discards token. Endpoint provided for API symmetry.
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+type changePasswordRequest struct {
+	OldPassword string `json:"oldPassword"`
+	NewPassword string `json:"newPassword"`
+}
+
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	var req changePasswordRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return
+	}
+	if len(req.NewPassword) < 6 {
+		httpx.WriteError(w, http.StatusBadRequest, "WEAK_PASSWORD", "password must be at least 6 chars")
+		return
+	}
+	uid := httpx.UserIDFrom(r.Context())
+	if err := h.Svc.ChangePassword(r.Context(), uid, req.OldPassword, req.NewPassword); err != nil {
+		httpx.HandleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}

@@ -11,8 +11,15 @@ class TodoPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pending = ref.watch(todoPendingProvider);
     final props = ref.watch(visiblePropertiesProvider);
+
+    // Trigger board loads and check if any are still loading
+    final anyLoading = props.any((p) => ref.watch(boardProvider(p.id)).isLoading);
+    if (anyLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final pending = ref.watch(todoPendingProvider);
 
     return pending.isEmpty
           ? const Center(
@@ -102,7 +109,7 @@ class _TodoCardTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => context.go('/properties/${property.id}/board'),
+      onTap: () => context.go('/properties/${property.id}/board', extra: card.id),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),

@@ -12,13 +12,11 @@ class AddCardInline extends StatefulWidget {
 
 class _AddCardInlineState extends State<AddCardInline> {
   final _titleCtrl = TextEditingController();
-  final _roomCtrl = TextEditingController();
   bool _loading = false;
 
   @override
   void dispose() {
     _titleCtrl.dispose();
-    _roomCtrl.dispose();
     super.dispose();
   }
 
@@ -48,16 +46,6 @@ class _AddCardInlineState extends State<AddCardInline> {
             ),
             style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
             onSubmitted: (_) => _submit(),
-          ),
-          TextField(
-            controller: _roomCtrl,
-            decoration: const InputDecoration(
-              hintText: 'Código habitación (opcional)',
-              isDense: true,
-              contentPadding: EdgeInsets.symmetric(vertical: 4),
-              border: InputBorder.none,
-            ),
-            style: const TextStyle(fontSize: 12),
           ),
           const SizedBox(height: 8),
           Row(
@@ -90,7 +78,7 @@ class _AddCardInlineState extends State<AddCardInline> {
   Future<void> _submit() async {
     if (_titleCtrl.text.trim().isEmpty) return;
     setState(() => _loading = true);
-    await widget.onAdd(_titleCtrl.text.trim(), _roomCtrl.text.trim());
+    await widget.onAdd(_titleCtrl.text.trim(), '');
     if (mounted) setState(() => _loading = false);
   }
 }

@@ -1,0 +1,172 @@
+package handlers
+
+import (
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
+	"github.com/jose/manage_property_room_api/internal/domain"
+	"github.com/jose/manage_property_room_api/internal/httpx"
+	"github.com/jose/manage_property_room_api/internal/store"
+)
+
+type CardsHandler struct {
+	Store store.Store
+}
+
+type createCardRequest struct {
+	Title        string                 `json:"title"`
+	Description  string                 `json:"description"`
+	Position     int                    `json:"position"`
+	RoomCode     string                 `json:"roomCode"`
+	Priority     domain.CardPriority    `json:"priority"`
+	CheckinDate  *time.Time             `json:"checkinDate,omitempty"`
+	AssignedToID *string                `json:"assignedToId,omitempty"`
+	Kind         domain.CardKind        `json:"kind"`
+	CustomFields map[string]any         `json:"customFields"`
+}
+
+type updateCardRequest struct {
+	ColumnID     *string                 `json:"columnId,omitempty"`
+	Title        *string                 `json:"title,omitempty"`
+	Description  *string                 `json:"description,omitempty"`
+	Position     *int                    `json:"position,omitempty"`
+	IsDone       *bool                   `json:"isDone,omitempty"`
+	RoomCode     *string                 `json:"roomCode,omitempty"`
+	Priority     *domain.CardPriority    `json:"priority,omitempty"`
+	CheckinDate  *time.Time              `json:"checkinDate,omitempty"`
+	ClearCheckin bool                    `json:"clearCheckin,omitempty"`
+	AssignedToID *string                 `json:"assignedToId,omitempty"`
+	ClearAssign  bool                    `json:"clearAssign,omitempty"`
+	Kind         *domain.CardKind        `json:"kind,omitempty"`
+	CustomFields *map[string]any         `json:"customFields,omitempty"`
+}
+
+func (h *CardsHandler) CreateForColumn(w http.ResponseWriter, r *http.Request) {
+	columnID := chi.URLParam(r, "id")
+	col, err := h.Store.Columns().GetByID(r.Context(), columnID)
+	if err != nil { httpx.HandleError(w, err); return }
+	var req createCardRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error()); return
+	}
+	if req.Title == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "title required"); return
+	}
+	if req.Priority == "" { req.Priority = domain.PriorityNormal }
+	if req.Kind == "" { req.Kind = domain.CardKindRoom }
+	if req.CustomFields == nil { req.CustomFields = map[string]any{} }
+	c := &domain.Card{
+		ID: uuid.NewString(),
+		PropertyID: col.PropertyID, ColumnID: columnID,
+		Title: req.Title, Description: req.Description, Position: req.Position,
+		RoomCode: req.RoomCode, Priority: req.Priority, Kind: req.Kind,
+		CheckinDate: req.CheckinDate, AssignedToID: req.AssignedToID,
+		CustomFields: req.CustomFields,
+	}
+	if err := h.Store.Cards().Create(r.Context(), c); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, c)
+}
+
+func (h *CardsHandler) Get(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	c, err := h.Store.Cards().GetByID(r.Context(), id)
+	if err != nil { httpx.HandleError(w, err); return }
+	httpx.WriteJSON(w, http.StatusOK, c)
+}
+
+func (h *CardsHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	c, err := h.Store.Cards().GetByID(r.Context(), id)
+	if err != nil { httpx.HandleError(w, err); return }
+	var req updateCardRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error()); return
+	}
+	if req.ColumnID != nil { c.ColumnID = *req.ColumnID }
+	if req.Title != nil { c.Title = *req.Title }
+	if req.Description != nil { c.Description = *req.Description }
+	if req.Position != nil { c.Position = *req.Position }
+	if req.IsDone != nil { c.IsDone = *req.IsDone }
+	if req.RoomCode != nil { c.RoomCode = *req.RoomCode }
+	if req.Priority != nil { c.Priority = *req.Priority }
+	if req.ClearCheckin { c.CheckinDate = nil } else if req.CheckinDate != nil { c.CheckinDate = req.CheckinDate }
+	if req.ClearAssign { c.AssignedToID = nil } else if req.AssignedToID != nil { c.AssignedToID = req.AssignedToID }
+	if req.Kind != nil { c.Kind = *req.Kind }
+	if req.CustomFields != nil { c.CustomFields = *req.CustomFields }
+	if err := h.Store.Cards().Update(r.Context(), c); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	httpx.WriteJSON(w, http.StatusOK, c)
+}
+
+func (h *CardsHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.Store.Cards().Delete(r.Context(), id); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type moveCardRequest struct {
+	TargetColumnID string `json:"targetColumnId"`
+	Position       int    `json:"position"`
+}
+
+func (h *CardsHandler) Move(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req moveCardRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error()); return
+	}
+	if err := h.Store.Cards().MoveToColumn(r.Context(), id, req.TargetColumnID, req.Position); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	c, err := h.Store.Cards().GetByID(r.Context(), id)
+	if err != nil { httpx.HandleError(w, err); return }
+	httpx.WriteJSON(w, http.StatusOK, c)
+}
+
+func (h *CardsHandler) ToggleDone(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	c, err := h.Store.Cards().GetByID(r.Context(), id)
+	if err != nil { httpx.HandleError(w, err); return }
+	c.IsDone = !c.IsDone
+	if err := h.Store.Cards().Update(r.Context(), c); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	httpx.WriteJSON(w, http.StatusOK, c)
+}
+
+func (h *CardsHandler) Archive(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	c, err := h.Store.Cards().GetByID(r.Context(), id)
+	if err != nil { httpx.HandleError(w, err); return }
+	if err := archiveCard(r, h.Store, c); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	httpx.WriteJSON(w, http.StatusOK, c)
+}
+
+type assignRequest struct {
+	UserID *string `json:"userId"` // nil → unassign
+}
+
+func (h *CardsHandler) Assign(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req assignRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error()); return
+	}
+	c, err := h.Store.Cards().GetByID(r.Context(), id)
+	if err != nil { httpx.HandleError(w, err); return }
+	c.AssignedToID = req.UserID
+	if err := h.Store.Cards().Update(r.Context(), c); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	httpx.WriteJSON(w, http.StatusOK, c)
+}

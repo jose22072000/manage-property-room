@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import '../domain/domain.dart';
 import '../data/sources/hive_repositories.dart';
 import '../data/seed_data.dart';
 import '../application/providers/repo_providers.dart';
@@ -29,14 +28,10 @@ Future<void> bootstrap() async {
     fieldRepo: container.read(fieldRepoProvider),
   );
 
-  // Set default user (first admin) if none saved
+  // Clear stored current user on every startup so login is always required.
+  // The LoginPage handles auth via the API and sets the user after success.
   final settings = container.read(settingsRepoProvider);
-  final currentId = await settings.getCurrentUserId();
-  if (currentId == null) {
-    final users = await container.read(userRepoProvider).getAll();
-    final admin = users.where((u) => u.role == UserRole.admin).firstOrNull;
-    if (admin != null) await settings.setCurrentUserId(admin.id);
-  }
+  await settings.setCurrentUserId('');   // empty = no user
   container.dispose();
 
   runApp(const ProviderScope(child: _App()));
@@ -64,8 +59,8 @@ class _AppState extends ConsumerState<_App> {
       title: 'Manage Property Room',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
+      darkTheme: AppTheme.light,
+      themeMode: ThemeMode.light,
       routerConfig: _router,
       locale: const Locale('es'),
       supportedLocales: const [Locale('es'), Locale('en')],

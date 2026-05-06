@@ -25,10 +25,12 @@ class AppTheme {
           ),
         ),
         cardTheme: CardThemeData(
-          elevation: 1,
+          elevation: 1.5,
           margin: EdgeInsets.zero,
+          surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFFE2E8F0)),
           ),
           color: Colors.white,
         ),
@@ -39,10 +41,18 @@ class AppTheme {
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: const Color(0xFFF1F5F9),
+          fillColor: const Color(0xFFF8FAFC),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide.none,
+            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 1.5),
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         ),
@@ -68,18 +78,22 @@ class AppTheme {
           labelType: NavigationRailLabelType.all,
         ),
         dividerTheme: const DividerThemeData(
-          color: Color(0xFFE2E8F0),
+          color: Color(0xFFCBD5E1),
           thickness: 1,
           space: 1,
         ),
         textTheme: const TextTheme(
           headlineSmall: TextStyle(fontWeight: FontWeight.w700, fontSize: 20, color: Color(0xFF0F172A)),
-          titleLarge: TextStyle(fontWeight: FontWeight.w600, fontSize: 16, color: Color(0xFF0F172A)),
-          titleMedium: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF1E293B)),
-          bodyMedium: TextStyle(fontSize: 14, color: Color(0xFF334155)),
-          bodySmall: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-          labelSmall: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+          titleLarge: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0F172A)),
+          titleMedium: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF0F172A)),
+          bodyLarge: TextStyle(fontSize: 15, color: Color(0xFF0F172A)),
+          bodyMedium: TextStyle(fontSize: 14, color: Color(0xFF111827)),
+          bodySmall: TextStyle(fontSize: 12, color: Color(0xFF374151)),
+          labelLarge: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF111827)),
+          labelMedium: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1F2937)),
+          labelSmall: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF374151)),
         ),
+        iconTheme: const IconThemeData(color: Color(0xFF1E293B)),
         extensions: const [],
       );
 

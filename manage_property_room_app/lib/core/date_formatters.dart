@@ -21,6 +21,15 @@ String formatRelativeDate(DateTime dt) {
   return formatDate(dt);
 }
 
+/// Short timestamp for done chips: "06/05 20:16"
+String formatDoneAt(DateTime dt) {
+  final local = dt.toLocal();
+  final day = local.day.toString().padLeft(2, '0');
+  final month = local.month.toString().padLeft(2, '0');
+  final hour = local.hour.toString().padLeft(2, '0');
+  final min = local.minute.toString().padLeft(2, '0');
+  return '$day/$month $hour:$min';
+}
 /// Whether a card is considered urgent based on checkinDate.
 bool isCheckinTomorrow(DateTime? checkinDate) {
   if (checkinDate == null) return false;

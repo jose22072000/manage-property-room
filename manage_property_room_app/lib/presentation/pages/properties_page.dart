@@ -5,6 +5,7 @@ import '../../application/notifiers/notifiers.dart';
 import '../../core/property_visuals.dart';
 import '../../core/responsive.dart';
 import '../../domain/domain.dart';
+import '../widgets/property/property_workers_button.dart';
 
 class PropertiesPage extends ConsumerWidget {
   const PropertiesPage({super.key});
@@ -103,6 +104,11 @@ class _PropertyCard extends StatelessWidget {
                 top: 12,
                 right: 12,
                 child: Icon(Icons.star_border_rounded, color: Color(0x99FFFFFF), size: 18),
+              ),
+              Positioned(
+                bottom: 10,
+                right: 10,
+                child: PropertyWorkersButton(propertyId: property.id),
               ),
               Positioned(
                 left: 0,

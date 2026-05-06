@@ -330,6 +330,7 @@ class HiveSettingsRepository implements SettingsRepository {
 
   static const _currentUser = 'currentUserId';
   static const _seedVersion = 'seedVersion';
+  static const _tokenKey = 'jwt_token';
 
   @override
   Future<String?> getCurrentUserId() async => _box.get(_currentUser);
@@ -346,4 +347,13 @@ class HiveSettingsRepository implements SettingsRepository {
   @override
   Future<void> setSeedVersion(int version) async =>
       _box.put(_seedVersion, version.toString());
+
+  @override
+  Future<String?> getToken() async => _box.get(_tokenKey);
+
+  @override
+  Future<void> saveToken(String token) async => _box.put(_tokenKey, token);
+
+  @override
+  Future<void> clearToken() async => _box.delete(_tokenKey);
 }

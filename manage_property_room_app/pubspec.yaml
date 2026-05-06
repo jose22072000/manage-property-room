@@ -33,6 +33,12 @@ dependencies:
   intl: ^0.20.0
   collection: ^1.18.0
 
+  # Backend HTTP client (FASE 7-LINK)
+  http: ^1.6.0
+
+  # Image picker (web file + mobile camera/gallery)
+  image_picker: ^1.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

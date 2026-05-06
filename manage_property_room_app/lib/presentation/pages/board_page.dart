@@ -8,26 +8,72 @@ import '../../domain/domain.dart';
 import '../../permissions/policy.dart';
 import '../widgets/board/board_column_widget.dart';
 import '../widgets/board/add_column_sheet.dart';
+import '../widgets/board/card_detail_sheet.dart';
 
-class BoardPage extends ConsumerWidget {
-  const BoardPage({super.key, required this.propertyId});
+class BoardPage extends ConsumerStatefulWidget {
+  const BoardPage({super.key, required this.propertyId, this.highlightCardId});
 
   final String propertyId;
+  final String? highlightCardId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final boardAsync = ref.watch(boardProvider(propertyId));
+  ConsumerState<BoardPage> createState() => _BoardPageState();
+}
+
+class _BoardPageState extends ConsumerState<BoardPage> {
+  bool _cardOpened = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final boardAsync = ref.watch(boardProvider(widget.propertyId));
     final propsAsync = ref.watch(propertiesProvider);
     final userAsync = ref.watch(currentUserProvider);
 
     final prop = propsAsync.valueOrNull?.firstWhere(
-      (p) => p.id == propertyId,
-      orElse: () => Property(id: propertyId, code: '?', name: propertyId, totalRooms: 0),
+      (p) => p.id == widget.propertyId,
+      orElse: () => Property(id: widget.propertyId, code: '?', name: widget.propertyId, totalRooms: 0),
     );
 
     final user = userAsync.valueOrNull;
     final isMobile = Responsive.isMobile(context);
     final canAddColumn = user != null && Policy.canBoard(user, BoardAction.addColumn);
+
+    // Open card detail if navigated here with a highlight card ID
+    if (!_cardOpened && widget.highlightCardId != null) {
+      boardAsync.whenData((board) {
+        BoardCard? target;
+        BoardColumn? targetColumn;
+        for (final col in board.columns) {
+          final cards = board.cardsByColumn[col.id] ?? [];
+          for (final c in cards) {
+            if (c.id == widget.highlightCardId) {
+              target = c;
+              targetColumn = col;
+              break;
+            }
+          }
+          if (target != null) break;
+        }
+        if (target != null && targetColumn != null) {
+          _cardOpened = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              useSafeArea: true,
+              builder: (_) => CardDetailSheet(
+                card: target!,
+                column: targetColumn!,
+                allColumns: board.columns,
+                propertyId: widget.propertyId,
+                user: user,
+              ),
+            );
+          });
+        }
+      });
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -62,7 +108,7 @@ class BoardPage extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(prop?.name ?? propertyId,
+                    Text(prop?.name ?? widget.propertyId,
                         style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
                     boardAsync.maybeWhen(
                       data: (state) => state.totalCards > 0
@@ -100,9 +146,9 @@ class BoardPage extends ConsumerWidget {
                 );
               }
               if (isMobile) {
-                return _MobileBoard(state: state, propertyId: propertyId, user: user);
+                return _MobileBoard(state: state, propertyId: widget.propertyId, user: user);
               }
-              return _DesktopBoard(state: state, propertyId: propertyId, user: user);
+              return _DesktopBoard(state: state, propertyId: widget.propertyId, user: user);
             },
           ),
         ),
@@ -115,9 +161,9 @@ class BoardPage extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       builder: (_) => AddColumnSheet(
-        propertyId: propertyId,
+        propertyId: widget.propertyId,
         onAdd: (title, color) {
-          ref.read(boardProvider(propertyId).notifier).addColumn(title, color);
+          ref.read(boardProvider(widget.propertyId).notifier).addColumn(title, color);
           Navigator.pop(context);
         },
       ),

@@ -69,4 +69,7 @@ abstract class SettingsRepository {
   Future<void> setCurrentUserId(String id);
   Future<int> getSeedVersion();
   Future<void> setSeedVersion(int version);
+  Future<String?> getToken();
+  Future<void> saveToken(String token);
+  Future<void> clearToken();
 }

@@ -30,6 +30,7 @@ class CardItemWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final canToggle = user != null && Policy.canCard(user!, card, CardAction.toggleDone);
+    final prefs = ref.watch(cardDisplayPrefsProvider(card.columnId));
 
     return GestureDetector(
       onTap: onTap,
@@ -61,11 +62,15 @@ class CardItemWidget extends ConsumerWidget {
             Row(
               children: [
                 // Checkbox / done toggle
-                if (canToggle)
+                if (canToggle && prefs.showDone)
                   GestureDetector(
-                    onTap: () => ref
-                        .read(boardProvider(propertyId).notifier)
-                        .toggleCardDone(card.id),
+                    onTap: () {
+                      final willBeDone = !card.isDone;
+                      final markedBy = willBeDone ? (user?.initials ?? '') : '';
+                      ref
+                          .read(boardProvider(propertyId).notifier)
+                          .toggleCardDone(card.id, cleanedBy: markedBy);
+                    },
                     behavior: HitTestBehavior.opaque,
                     child: Padding(
                       padding: const EdgeInsets.only(right: 8),
@@ -87,7 +92,7 @@ class CardItemWidget extends ConsumerWidget {
                       ),
                     ),
                   ),
-                if (card.roomCode.isNotEmpty)
+                if (card.roomCode.isNotEmpty && prefs.showRoomCode)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                     margin: const EdgeInsets.only(right: 6),
@@ -107,7 +112,6 @@ class CardItemWidget extends ConsumerWidget {
                       fontWeight: FontWeight.w500,
                       fontSize: 13,
                       color: card.isDone ? const Color(0xFF94A3B8) : const Color(0xFF1E293B),
-                      decoration: card.isDone ? TextDecoration.lineThrough : null,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -115,7 +119,7 @@ class CardItemWidget extends ConsumerWidget {
                 ),
               ],
             ),
-            if (card.description.isNotEmpty) ...[
+            if (card.description.isNotEmpty && prefs.showDescription) ...[
               const SizedBox(height: 4),
               Text(
                 card.description,
@@ -128,18 +132,25 @@ class CardItemWidget extends ConsumerWidget {
             // Footer chips
             Row(
               children: [
-                if (card.priority == CardPriority.high)
+                if (card.priority == CardPriority.high && prefs.showPriority)
                   _Chip(
                     label: 'ALTA',
                     color: const Color(0xFFEF4444),
                     bgColor: const Color(0xFFFEE2E2),
                   ),
-                if (card.checkinDate != null)
+                if (card.checkinDate != null && prefs.showCheckin)
                   _Chip(
                     icon: Icons.login_outlined,
                     label: formatRelativeDate(card.checkinDate!),
                     color: _isUrgent ? const Color(0xFFEF4444) : const Color(0xFF64748B),
                     bgColor: _isUrgent ? const Color(0xFFFEE2E2) : const Color(0xFFF1F5F9),
+                  ),
+                if (card.isDone && prefs.showCleanedBy && (card.cleanedBy.isNotEmpty || card.doneAt != null))
+                  _Chip(
+                    icon: Icons.check_circle_outline,
+                    label: _doneLabel(card),
+                    color: const Color(0xFF16A34A),
+                    bgColor: const Color(0xFFDCFCE7),
                   ),
                 const Spacer(),
                 if (isMobile && allColumns.length > 1)
@@ -164,6 +175,13 @@ class CardItemWidget extends ConsumerWidget {
         propertyId: propertyId,
       ),
     );
+  }
+
+  static String _doneLabel(BoardCard card) {
+    final parts = <String>[];
+    if (card.cleanedBy.isNotEmpty) parts.add(card.cleanedBy);
+    if (card.doneAt != null) parts.add(formatDoneAt(card.doneAt!));
+    return parts.isEmpty ? 'Completado' : parts.join(' · ');
   }
 }
 

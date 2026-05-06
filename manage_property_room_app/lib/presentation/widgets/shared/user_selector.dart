@@ -1,121 +1,102 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../application/notifiers/notifiers.dart';
+import '../../../application/providers/api_providers.dart';
+import '../../../application/providers/repo_providers.dart';
 import '../../../domain/domain.dart';
 
+/// Shows the logged-in user's avatar. Tapping opens a profile + logout menu.
 class UserSelector extends ConsumerWidget {
   const UserSelector({super.key, required this.compact});
-
-  /// When true, shows only an avatar (for NavigationRail header).
   final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(currentUserProvider);
-    final usersAsync = ref.watch(usersProvider);
+    final user = ref.watch(currentUserProvider).valueOrNull;
+    if (user == null) return const SizedBox.shrink();
 
-    final currentUser = userAsync.valueOrNull;
-    final users = usersAsync.valueOrNull ?? [];
-
-    if (currentUser == null) return const SizedBox.shrink();
-
-    final avatar = _Avatar(user: currentUser);
-
-    if (compact) {
-      return GestureDetector(
-        onTap: () => _showPicker(context, ref, currentUser, users),
-        child: avatar,
-      );
-    }
-
-    return PopupMenuButton<AppUser>(
-      tooltip: 'Cambiar usuario',
-      offset: const Offset(0, 40),
-      onSelected: (u) => ref.read(currentUserProvider.notifier).setUser(u),
-      itemBuilder: (_) => users
-          .map((u) => PopupMenuItem<AppUser>(
-                value: u,
-                child: Row(
-                  children: [
-                    _Avatar(user: u, size: 28),
-                    const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(u.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        Text(_roleLabel(u.role), style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-                      ],
-                    ),
-                    if (u.id == currentUser.id) ...[
-                      const Spacer(),
-                      const Icon(Icons.check, size: 16, color: Color(0xFF2563EB)),
-                    ],
-                  ],
-                ),
-              ))
-          .toList(),
+    return PopupMenuButton<_Action>(
+      tooltip: 'Perfil',
+      offset: const Offset(0, 44),
+      onSelected: (action) => _handle(context, ref, action),
+      itemBuilder: (_) => [
+        PopupMenuItem<_Action>(
+          enabled: false,
+          child: _ProfileHeader(user: user),
+        ),
+        const PopupMenuDivider(),
+        const PopupMenuItem<_Action>(
+          value: _Action.logout,
+          child: Row(
+            children: [
+              Icon(Icons.logout, size: 16, color: Color(0xFFDC2626)),
+              SizedBox(width: 10),
+              Text('Cerrar sesión',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFFDC2626),
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ],
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-        child: avatar,
+        child: _Avatar(user: user, size: compact ? 30 : 32),
       ),
     );
   }
 
-  void _showPicker(BuildContext context, WidgetRef ref, AppUser current, List<AppUser> users) {
-    showModalBottomSheet(
-      context: context,
-      builder: (_) => _UserPickerSheet(
-        current: current,
-        users: users,
-        onSelect: (u) => ref.read(currentUserProvider.notifier).setUser(u),
-      ),
-    );
+  Future<void> _handle(
+      BuildContext context, WidgetRef ref, _Action action) async {
+    switch (action) {
+      case _Action.logout:
+        try {
+          await ref.read(authApiProvider).logout();
+        } catch (_) {
+          // best-effort — ignore server-side errors
+        }
+        await ref.read(settingsRepoProvider).clearToken();
+        await ref.read(currentUserProvider.notifier).clearUser();
+        if (context.mounted) context.go('/login');
+    }
   }
 }
 
-class _UserPickerSheet extends StatelessWidget {
-  const _UserPickerSheet({
-    required this.current,
-    required this.users,
-    required this.onSelect,
-  });
+enum _Action { logout }
 
-  final AppUser current;
-  final List<AppUser> users;
-  final ValueChanged<AppUser> onSelect;
+class _ProfileHeader extends StatelessWidget {
+  const _ProfileHeader({required this.user});
+  final AppUser user;
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text('Cambiar usuario', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
-          ),
-          for (final u in users)
-            ListTile(
-              leading: _Avatar(user: u),
-              title: Text(u.name),
-              subtitle: Text(_roleLabel(u.role)),
-              trailing: u.id == current.id ? const Icon(Icons.check, color: Color(0xFF2563EB)) : null,
-              onTap: () {
-                onSelect(u);
-                Navigator.pop(context);
-              },
-            ),
-          const SizedBox(height: 8),
-        ],
-      ),
+    return Row(
+      children: [
+        _Avatar(user: user, size: 36),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(user.name,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: Color(0xFF111827))),
+            Text(_roleLabel(user.role),
+                style: const TextStyle(
+                    fontSize: 11, color: Color(0xFF64748B))),
+          ],
+        ),
+      ],
     );
   }
 }
 
 class _Avatar extends StatelessWidget {
   const _Avatar({required this.user, this.size = 32});
-
   final AppUser user;
   final double size;
 

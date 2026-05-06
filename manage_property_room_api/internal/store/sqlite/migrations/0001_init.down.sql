@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS archive;
+DROP TABLE IF EXISTS activity_events;
+DROP TABLE IF EXISTS comments;
+DROP TABLE IF EXISTS fields;
+DROP TABLE IF EXISTS cards;
+DROP TABLE IF EXISTS columns;
+DROP TABLE IF EXISTS user_property_assignments;
+DROP TABLE IF EXISTS properties;
+DROP TABLE IF EXISTS users;

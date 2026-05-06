@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import '../../domain/domain.dart';
 import '../../permissions/policy.dart';
 import '../providers/repo_providers.dart';
+import '../providers/api_providers.dart';
 
 const _uuid = Uuid();
 
@@ -84,16 +85,39 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
   @override
   Future<AppUser?> build() async {
     final settings = ref.read(settingsRepoProvider);
-    final users = ref.read(userRepoProvider);
-    final id = await settings.getCurrentUserId();
-    if (id == null) return null;
-    return users.getById(id);
+
+    // 1. Try to restore API session from a previously saved JWT token.
+    final savedToken = await settings.getToken();
+    if (savedToken != null && savedToken.isNotEmpty) {
+      ref.read(apiClientProvider).session.token = savedToken;
+      try {
+        final me = await ref.read(authApiProvider).me();
+        final user = AppUser.fromJson(me);
+        // Persist so Hive-backed lookups still work.
+        await ref.read(userRepoProvider).save(user);
+        await settings.setCurrentUserId(user.id);
+        return user;
+      } catch (_) {
+        // Token expired or invalid — clear and fall through to login.
+        await settings.clearToken();
+        ref.read(apiClientProvider).session.clear();
+      }
+    }
+
+    // 2. No valid token — user must log in.
+    return null;
   }
 
   Future<void> setUser(AppUser user) async {
     final settings = ref.read(settingsRepoProvider);
     await settings.setCurrentUserId(user.id);
     state = AsyncData(user);
+  }
+
+  Future<void> clearUser() async {
+    final settings = ref.read(settingsRepoProvider);
+    await settings.setCurrentUserId('');
+    state = const AsyncData(null);
   }
 }
 
@@ -107,22 +131,75 @@ final currentUserProvider =
 class UsersNotifier extends AsyncNotifier<List<AppUser>> {
   @override
   Future<List<AppUser>> build() async {
-    return ref.read(userRepoProvider).getAll();
+    final user = await ref.watch(currentUserProvider.future);
+    if (user == null) return [];
+    final list = await ref.read(usersApiProvider).getAll();
+    return list.map(AppUser.fromJson).toList();
   }
 
   Future<void> reload() async {
-    state = const AsyncLoading();
-    state = AsyncData(await ref.read(userRepoProvider).getAll());
+    final list = await ref.read(usersApiProvider).getAll();
+    state = AsyncData(list.map(AppUser.fromJson).toList());
   }
 
-  Future<void> saveUser(AppUser user) async {
-    await ref.read(userRepoProvider).save(user);
-    await reload();
+  /// Create a new user via the API. Requires [email] and [password].
+  Future<void> createUser({
+    required String email,
+    required String password,
+    required String name,
+    required String initials,
+    required String role,
+    List<String> assignedPropertyIds = const [],
+  }) async {
+    try {
+      await ref.read(usersApiProvider).create(
+            email: email,
+            password: password,
+            name: name,
+            initials: initials,
+            role: role,
+            assignedPropertyIds: assignedPropertyIds,
+          );
+      await reload();
+    } catch (e) {
+      ref.read(toastProvider.notifier).show('Error al crear usuario: $e');
+      rethrow;
+    }
+  }
+
+  /// Update an existing user. Only sends mutable fields (no password).
+  Future<void> updateUser(AppUser user) async {
+    final prev = List<AppUser>.from(state.valueOrNull ?? []);
+    final next = [...prev];
+    final idx = next.indexWhere((u) => u.id == user.id);
+    if (idx >= 0) next[idx] = user;
+    state = AsyncData(next);
+    try {
+      await ref.read(usersApiProvider).update(user.id, {
+        'name': user.name,
+        'initials': user.initials,
+        'role': user.role.name,
+        'assignedPropertyIds': user.assignedPropertyIds,
+      });
+      await reload();
+    } catch (e) {
+      state = AsyncData(prev);
+      ref.read(toastProvider.notifier).show('Error al guardar usuario: $e');
+      rethrow;
+    }
   }
 
   Future<void> deleteUser(String id) async {
-    await ref.read(userRepoProvider).delete(id);
-    await reload();
+    final prev = List<AppUser>.from(state.valueOrNull ?? []);
+    state = AsyncData(prev.where((u) => u.id != id).toList());
+    try {
+      await ref.read(usersApiProvider).delete(id);
+      await reload();
+    } catch (e) {
+      state = AsyncData(prev);
+      ref.read(toastProvider.notifier).show('Error al eliminar: $e');
+      rethrow;
+    }
   }
 }
 
@@ -136,17 +213,43 @@ final usersProvider =
 class PropertiesNotifier extends AsyncNotifier<List<Property>> {
   @override
   Future<List<Property>> build() async {
-    return ref.read(propertyRepoProvider).getAll();
+    final user = await ref.watch(currentUserProvider.future);
+    if (user == null) return [];
+    final list = await ref.read(propertiesApiProvider).getAll();
+    return list.map(Property.fromJson).toList()
+      ..sort((a, b) => a.code.compareTo(b.code));
   }
 
   Future<void> reload() async {
-    state = const AsyncLoading();
-    state = AsyncData(await ref.read(propertyRepoProvider).getAll());
+    final list = await ref.read(propertiesApiProvider).getAll();
+    state = AsyncData(
+      list.map(Property.fromJson).toList()..sort((a, b) => a.code.compareTo(b.code)),
+    );
   }
 
   Future<void> saveProperty(Property p) async {
-    await ref.read(propertyRepoProvider).save(p);
-    await reload();
+    final prev = List<Property>.from(state.valueOrNull ?? []);
+    final next = [...prev];
+    final idx = next.indexWhere((x) => x.id == p.id);
+    if (idx >= 0) {
+      next[idx] = p;
+    } else {
+      next.add(p);
+    }
+    next.sort((a, b) => a.code.compareTo(b.code));
+    state = AsyncData(next);
+    try {
+      if (idx >= 0) {
+        await ref.read(propertiesApiProvider).update(p.id, p.toJson());
+      } else {
+        await ref.read(propertiesApiProvider).create(p.toJson());
+      }
+      await reload();
+    } catch (e) {
+      state = AsyncData(prev);
+      ref.read(toastProvider.notifier).show('Error: $e');
+      rethrow;
+    }
   }
 }
 
@@ -172,34 +275,82 @@ final visiblePropertiesProvider = Provider<List<Property>>((ref) {
 class FieldsNotifier extends AsyncNotifier<List<FieldDef>> {
   @override
   Future<List<FieldDef>> build() async {
-    return ref.read(fieldRepoProvider).getAll();
+    final user = await ref.watch(currentUserProvider.future);
+    if (user == null) return [];
+    final list = await ref.read(fieldsApiProvider).getAll();
+    return list.map(FieldDef.fromJson).toList();
   }
 
-  Future<void> _save(List<FieldDef> fields) async {
-    await ref.read(fieldRepoProvider).saveAll(fields);
-    state = AsyncData(fields);
+  Future<void> _reload() async {
+    final list = await ref.read(fieldsApiProvider).getAll();
+    state = AsyncData(list.map(FieldDef.fromJson).toList());
+  }
+
+  /// Invalidates all board providers so boards re-fetch after field changes.
+  void _invalidateBoards() {
+    final props = ref.read(visiblePropertiesProvider);
+    for (final p in props) {
+      ref.invalidate(boardProvider(p.id));
+    }
   }
 
   Future<void> addField(FieldDef field) async {
-    final current = state.valueOrNull ?? [];
-    await _save([...current, field]);
+    final prev = List<FieldDef>.from(state.valueOrNull ?? []);
+    state = AsyncData([...prev, field]);
+    try {
+      await ref.read(fieldsApiProvider).create(field.toJson());
+      await _reload();
+      _invalidateBoards();
+    } catch (e) {
+      state = AsyncData(prev);
+      ref.read(toastProvider.notifier).show('Error al crear campo: $e');
+      rethrow;
+    }
   }
 
   Future<void> updateField(FieldDef field) async {
-    final current = state.valueOrNull ?? [];
-    await _save(current.map((f) => f.id == field.id ? field : f).toList());
+    final prev = List<FieldDef>.from(state.valueOrNull ?? []);
+    final next = [...prev];
+    final idx = next.indexWhere((f) => f.id == field.id);
+    if (idx >= 0) next[idx] = field;
+    state = AsyncData(next);
+    try {
+      await ref.read(fieldsApiProvider).update(field.id, field.toJson());
+      await _reload();
+      _invalidateBoards();
+    } catch (e) {
+      state = AsyncData(prev);
+      ref.read(toastProvider.notifier).show('Error al guardar: $e');
+      rethrow;
+    }
   }
 
   Future<void> removeField(String id) async {
-    final current = state.valueOrNull ?? [];
-    await _save(current.where((f) => f.id != id).toList());
+    final prev = List<FieldDef>.from(state.valueOrNull ?? []);
+    state = AsyncData(prev.where((f) => f.id != id).toList());
+    try {
+      await ref.read(fieldsApiProvider).delete(id);
+      await _reload();
+      _invalidateBoards();
+    } catch (e) {
+      state = AsyncData(prev);
+      ref.read(toastProvider.notifier).show('Error al eliminar: $e');
+      rethrow;
+    }
   }
 
   Future<void> reorder(int oldIndex, int newIndex) async {
+    // Flutter ReorderableListView reports newIndex AFTER the old item is removed;
+    // so when moving down the reported index is one too high.
+    if (newIndex > oldIndex) newIndex -= 1;
+    // Optimistic local update first.
     final current = List<FieldDef>.from(state.valueOrNull ?? []);
     final item = current.removeAt(oldIndex);
     current.insert(newIndex, item);
-    await _save(current);
+    state = AsyncData(current);
+    // Send new order to API.
+    await ref.read(fieldsApiProvider).reorder(current.map((f) => f.id).toList());
+    _invalidateBoards();
   }
 }
 
@@ -241,16 +392,34 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String> {
 
   @override
   Future<BoardState> build(String arg) async {
+    await ref.watch(currentUserProvider.future);
     return _load();
   }
 
+  // ── Load from API ─────────────────────────────────
+
   Future<BoardState> _load() async {
-    final colRepo = ref.read(columnRepoProvider);
-    final cardRepo = ref.read(cardRepoProvider);
-    final columns = await colRepo.getByProperty(propertyId);
+    final api = ref.read(boardApiProvider);
+    final response = await api.getBoard(propertyId);
+    final rawColumns = (response['columns'] as List? ?? [])
+        .cast<Map<String, dynamic>>()
+        .where((j) => j['archived'] != true)
+        .toList();
+    final columns = rawColumns
+        .map((j) => BoardColumn.fromJson(j))
+        .toList()
+      ..sort((a, b) => a.position.compareTo(b.position));
+    final allCards = (response['cards'] as List? ?? [])
+        .cast<Map<String, dynamic>>()
+        .where((j) => j['archived'] != true)
+        .map((j) => BoardCard.fromJson(j))
+        .toList();
     final cardsByColumn = <String, List<BoardCard>>{};
     for (final col in columns) {
-      cardsByColumn[col.id] = await cardRepo.getByColumn(col.id);
+      cardsByColumn[col.id] = allCards
+          .where((c) => c.columnId == col.id)
+          .toList()
+        ..sort((a, b) => a.position.compareTo(b.position));
     }
     return BoardState(columns: columns, cardsByColumn: cardsByColumn);
   }
@@ -262,142 +431,119 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String> {
   // ── Columns ───────────────────────────────────────
 
   Future<void> addColumn(String title, ColumnColor color) async {
-    final current = state.valueOrNull;
-    final position = (current?.columns.length ?? 0);
-    final col = BoardColumn(
-      id: _uuid.v4(),
-      propertyId: propertyId,
-      title: title,
-      color: color,
-      position: position,
-    );
-    await ref.read(columnRepoProvider).save(col);
+    final position = state.valueOrNull?.columns.length ?? 0;
+    await ref.read(boardApiProvider).createColumn(
+          propertyId,
+          title: title,
+          color: color,
+          position: position,
+        );
     await _reload();
     ref.read(toastProvider.notifier).show('Lista "$title" creada');
   }
 
   Future<void> renameColumn(String columnId, String newTitle) async {
-    final col = state.valueOrNull?.columns.firstWhere((c) => c.id == columnId);
-    if (col == null) return;
-    await ref.read(columnRepoProvider).save(col.copyWith(title: newTitle));
+    await ref.read(boardApiProvider).updateColumn(columnId, {'title': newTitle});
     await _reload();
   }
 
   Future<void> setColumnColor(String columnId, ColumnColor color) async {
-    final col = state.valueOrNull?.columns.firstWhere((c) => c.id == columnId);
-    if (col == null) return;
-    await ref.read(columnRepoProvider).save(col.copyWith(color: color));
+    await ref.read(boardApiProvider).updateColumn(columnId, {'color': color.name});
     await _reload();
   }
 
   Future<void> updateColumnConfig(String columnId, ColumnConfig config) async {
-    final col = state.valueOrNull?.columns.firstWhere((c) => c.id == columnId);
-    if (col == null) return;
-    await ref.read(columnRepoProvider).save(col.copyWith(config: config));
-    await _reload();
+    // Optimistic update
+    final prev = state.valueOrNull;
+    if (prev != null) {
+      final newCols = prev.columns
+          .map((c) => c.id == columnId ? c.copyWith(config: config) : c)
+          .toList();
+      state = AsyncData(BoardState(columns: newCols, cardsByColumn: prev.cardsByColumn));
+    }
+    try {
+      await ref
+          .read(boardApiProvider)
+          .updateColumn(columnId, {'columnConfig': config.toJson()});
+      await _reload();
+    } catch (e) {
+      if (prev != null) state = AsyncData(prev);
+      ref.read(toastProvider.notifier).show('Error: $e');
+    }
   }
 
   Future<void> updateColumnDescription(String columnId, String description) async {
-    final col = state.valueOrNull?.columns.firstWhere((c) => c.id == columnId);
-    if (col == null) return;
-    await ref.read(columnRepoProvider).save(col.copyWith(description: description));
+    await ref
+        .read(boardApiProvider)
+        .updateColumn(columnId, {'description': description});
     await _reload();
   }
 
   Future<void> moveColumn(int fromIndex, int toIndex) async {
     final current = state.valueOrNull;
     if (current == null) return;
-    final cols = [...current.columns];
-    final item = cols.removeAt(fromIndex);
-    cols.insert(toIndex, item);
-    final updated = [for (var i = 0; i < cols.length; i++) cols[i].copyWith(position: i)];
-    await ref.read(columnRepoProvider).saveAll(updated);
+    final col = current.columns[fromIndex];
+    await ref.read(boardApiProvider).moveColumn(col.id, toIndex);
     await _reload();
   }
 
-  Future<void> archiveColumn(String columnId) async {
-    final colRepo = ref.read(columnRepoProvider);
-    final cardRepo = ref.read(cardRepoProvider);
-    final archiveRepo = ref.read(archiveRepoProvider);
-    final activityRepo = ref.read(activityRepoProvider);
-
-    final col = state.valueOrNull?.columns.firstWhere((c) => c.id == columnId);
-    if (col == null) return;
-
-    final cards = await cardRepo.getByColumn(columnId);
-    final now = DateTime.now();
-    final user = ref.read(currentUserProvider).valueOrNull;
-
-    for (final card in cards) {
-      final archived = ArchivedCard.fromCard(
-        card,
-        archivedAt: now,
-        archivedById: user?.id,
-        sourceColumnTitle: col.title,
-      );
-      await archiveRepo.save(archived);
-      await cardRepo.delete(card.id);
-      await activityRepo.save(ActivityEvent(
-        id: _uuid.v4(),
-        cardId: card.id,
-        type: ActivityType.archived,
-        message: 'Archivada junto con la lista "${col.title}"',
-        createdAt: now,
-        authorId: user?.id,
-      ));
+  Future<void> reorderColumns(int oldIndex, int newIndex) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    if (newIndex > oldIndex) newIndex -= 1;
+    final cols = [...current.columns]..sort((a, b) => a.position.compareTo(b.position));
+    final col = cols.removeAt(oldIndex);
+    cols.insert(newIndex, col);
+    // Optimistic update
+    final reordered = [
+      for (var i = 0; i < cols.length; i++) cols[i],
+    ];
+    state = AsyncData(BoardState(columns: reordered, cardsByColumn: current.cardsByColumn));
+    try {
+      final api = ref.read(boardApiProvider);
+      for (var i = 0; i < cols.length; i++) {
+        await api.updateColumnPosition(cols[i].id, i);
+      }
+      await _reload();
+    } catch (e) {
+      state = AsyncData(current);
+      ref.read(toastProvider.notifier).show('Error al reordenar: $e');
     }
-    await colRepo.delete(columnId);
-    ref.read(toastProvider.notifier).show('Lista "${col.title}" archivada');
+  }
+
+  Future<void> archiveColumn(String columnId) async {
+    final col = state.valueOrNull?.columns
+        .where((c) => c.id == columnId)
+        .firstOrNull;
+    await ref.read(boardApiProvider).archiveColumn(columnId);
+    ref.read(toastProvider.notifier).show('Lista "${col?.title ?? ''}" archivada');
     await _reload();
   }
 
   Future<void> copyColumn(String columnId, {String? toPropertyId}) async {
-    final current = state.valueOrNull;
-    if (current == null) return;
-    final col = current.columns.firstWhere((c) => c.id == columnId);
-    final cards = current.cardsByColumn[columnId] ?? [];
-    final targetPropertyId = toPropertyId ?? propertyId;
-
-    // Count existing columns in target to set position
-    int position;
-    if (toPropertyId != null) {
-      final targetCols = await ref.read(columnRepoProvider).getByProperty(targetPropertyId);
-      position = targetCols.length;
+    final api = ref.read(boardApiProvider);
+    if (toPropertyId != null && toPropertyId != propertyId) {
+      await api.copyColumnToProperty(columnId, toPropertyId);
+      ref.invalidate(boardProvider(toPropertyId));
     } else {
-      position = current.columns.length;
+      await api.duplicateColumn(columnId);
     }
-
-    final newColId = _uuid.v4();
-    final newCol = BoardColumn(
-      id: newColId,
-      propertyId: targetPropertyId,
-      title: '${col.title} (copia)',
-      color: col.color,
-      position: position,
-      description: col.description,
-      fieldIds: col.fieldIds,
-      config: col.config,
-    );
-    await ref.read(columnRepoProvider).save(newCol);
-
-    for (var i = 0; i < cards.length; i++) {
-      final card = cards[i];
-      await ref.read(cardRepoProvider).save(card.copyWith(
-            id: _uuid.v4(),
-            columnId: newColId,
-            propertyId: targetPropertyId,
-            position: i,
-            isDone: false,
-            createdAt: DateTime.now(),
-          ));
-    }
-
     ref.read(toastProvider.notifier).show('Lista copiada');
     await _reload();
-    if (toPropertyId != null) {
-      // Invalidate target board if open
-      ref.invalidate(boardProvider(toPropertyId));
-    }
+  }
+
+  Future<void> moveAllCards(String fromColumnId, String toColumnId) async {
+    if (fromColumnId == toColumnId) return;
+    await ref.read(boardApiProvider).moveAllCardsToColumn(fromColumnId, toColumnId);
+    ref.read(toastProvider.notifier).show('Tarjetas movidas');
+    await _reload();
+  }
+
+  Future<void> archiveAllCardsIn(String columnId) async {
+    final count = state.valueOrNull?.cardsByColumn[columnId]?.length ?? 0;
+    await ref.read(boardApiProvider).archiveAllCardsInColumn(columnId);
+    ref.read(toastProvider.notifier).show('$count tarjetas archivadas');
+    await _reload();
   }
 
   // ── Cards ─────────────────────────────────────────
@@ -408,186 +554,167 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String> {
     String roomCode = '',
     CardKind kind = CardKind.room,
   }) async {
-    final current = state.valueOrNull;
-    final position = (current?.cardsByColumn[columnId]?.length ?? 0);
-    final user = ref.read(currentUserProvider).valueOrNull;
-    final now = DateTime.now();
-    final card = BoardCard(
-      id: _uuid.v4(),
-      propertyId: propertyId,
-      columnId: columnId,
-      title: title,
-      roomCode: roomCode,
-      kind: kind,
-      position: position,
-      createdAt: now,
-    );
-    await ref.read(cardRepoProvider).save(card);
-    await ref.read(activityRepoProvider).save(ActivityEvent(
-          id: _uuid.v4(),
-          cardId: card.id,
-          type: ActivityType.created,
-          message: 'Tarjeta creada',
-          createdAt: now,
-          authorId: user?.id,
-        ));
+    final position = state.valueOrNull?.cardsByColumn[columnId]?.length ?? 0;
+    final json = await ref.read(boardApiProvider).createCard(
+          columnId,
+          title: title,
+          roomCode: roomCode,
+          kind: kind,
+          position: position,
+        );
+    final card = BoardCard.fromJson(json);
     await _reload();
     return card;
   }
 
   Future<void> updateCard(BoardCard card) async {
-    final existing = state.valueOrNull?.cardsByColumn.values
-        .expand((c) => c)
-        .firstWhere((c) => c.id == card.id, orElse: () => card);
-
-    await ref.read(cardRepoProvider).save(card);
-
-    // Log edit activity if title changed
-    if (existing?.title != card.title) {
-      final user = ref.read(currentUserProvider).valueOrNull;
-      await ref.read(activityRepoProvider).save(ActivityEvent(
-            id: _uuid.v4(),
-            cardId: card.id,
-            type: ActivityType.edited,
-            message: 'Título actualizado',
-            createdAt: DateTime.now(),
-            authorId: user?.id,
-          ));
+    // Optimistic local update
+    final prev = state.valueOrNull;
+    if (prev != null) {
+      final newMap = <String, List<BoardCard>>{};
+      prev.cardsByColumn.forEach((colId, list) {
+        newMap[colId] = list.map((c) => c.id == card.id ? card : c).toList();
+      });
+      state = AsyncData(BoardState(columns: prev.columns, cardsByColumn: newMap));
     }
-
-    await _reload();
+    final body = <String, dynamic>{
+      'title': card.title,
+      'description': card.description,
+      'roomCode': card.roomCode,
+      'priority': card.priority.name,
+      'isDone': card.isDone,
+      'kind': card.kind.name,
+      'customFields': card.customFields,
+      if (card.checkinDate != null)
+        'checkinDate': card.checkinDate!.toIso8601String(),
+      if (card.checkinDate == null) 'clearCheckin': true,
+      if (card.assignedToId != null) 'assignedToId': card.assignedToId,
+    };
+    try {
+      await ref.read(boardApiProvider).updateCard(card.id, body);
+      await _reload();
+    } catch (e) {
+      if (prev != null) state = AsyncData(prev);
+      ref.read(toastProvider.notifier).show('Error al guardar tarjeta: $e');
+      rethrow;
+    }
   }
 
-  Future<void> toggleCardDone(String cardId) async {
-    final card = state.valueOrNull?.cardsByColumn.values
-        .expand((c) => c)
-        .firstWhere((c) => c.id == cardId);
-    if (card == null) return;
-
-    final user = ref.read(currentUserProvider).valueOrNull;
+  Future<void> toggleCardDone(String cardId, {String cleanedBy = ''}) async {
+    // Optimistic flip
+    final prev = state.valueOrNull;
     final now = DateTime.now();
-    final updated = card.copyWith(isDone: !card.isDone);
-    await ref.read(cardRepoProvider).save(updated);
-    await ref.read(activityRepoProvider).save(ActivityEvent(
-          id: _uuid.v4(),
-          cardId: cardId,
-          type: updated.isDone ? ActivityType.done : ActivityType.undone,
-          message: updated.isDone ? 'Marcada como lista' : 'Marcada como pendiente',
-          createdAt: now,
-          authorId: user?.id,
-        ));
-    await _reload();
+    if (prev != null) {
+      final newMap = <String, List<BoardCard>>{};
+      prev.cardsByColumn.forEach((colId, list) {
+        newMap[colId] = list
+            .map((c) => c.id == cardId
+                ? c.copyWith(
+                    isDone: !c.isDone,
+                    cleanedBy: !c.isDone ? cleanedBy : '',
+                    doneAt: !c.isDone ? now : null,
+                    clearDoneAt: c.isDone,
+                  )
+                : c)
+            .toList();
+      });
+      state = AsyncData(BoardState(columns: prev.columns, cardsByColumn: newMap));
+    }
+    try {
+      final result = await ref.read(boardApiProvider).toggleDone(cardId);
+      final isNowDone = result['isDone'] as bool? ?? false;
+      if (isNowDone && cleanedBy.isNotEmpty) {
+        await ref.read(boardApiProvider).updateCard(cardId, {'cleanedBy': cleanedBy});
+      }
+      await _reload();
+    } catch (e) {
+      if (prev != null) state = AsyncData(prev);
+      ref.read(toastProvider.notifier).show('Error: $e');
+    }
   }
 
-  Future<void> moveCard(String cardId, String targetColumnId, int targetPosition) async {
-    final card = state.valueOrNull?.cardsByColumn.values
-        .expand((c) => c)
-        .firstWhere((c) => c.id == cardId);
-    if (card == null) return;
+  Future<void> reorderCardsInColumn(String columnId, int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+    final prev = state.valueOrNull;
+    if (prev == null) return;
+    final list = List<BoardCard>.from(prev.cardsByColumn[columnId] ?? []);
+    if (oldIndex >= list.length || newIndex >= list.length) return;
+    final item = list.removeAt(oldIndex);
+    list.insert(newIndex, item);
+    // Optimistic update
+    final newMap = Map<String, List<BoardCard>>.from(prev.cardsByColumn);
+    newMap[columnId] = list;
+    state = AsyncData(BoardState(columns: prev.columns, cardsByColumn: newMap));
+    try {
+      await ref.read(boardApiProvider).reorderCards(columnId, list.map((c) => c.id).toList());
+    } catch (e) {
+      if (prev != null) state = AsyncData(prev);
+      ref.read(toastProvider.notifier).show('Error al reordenar: $e');
+    }
+  }
 
-    final currentState = state.valueOrNull;
-    final user = ref.read(currentUserProvider).valueOrNull;
-    final now = DateTime.now();
-
-    final sourceColumnId = card.columnId;
-
-    // Re-index source column
-    if (sourceColumnId != targetColumnId) {
-      final sourceCards = [...(currentState?.cardsByColumn[sourceColumnId] ?? [])]
-        ..removeWhere((c) => c.id == cardId);
-      for (var i = 0; i < sourceCards.length; i++) {
-        await ref.read(cardRepoProvider).save(sourceCards[i].copyWith(position: i));
+  Future<void> moveCard(
+      String cardId, String targetColumnId, int targetPosition) async {
+    // Optimistic move
+    final prev = state.valueOrNull;
+    if (prev != null) {
+      final newMap = <String, List<BoardCard>>{};
+      BoardCard? moving;
+      prev.cardsByColumn.forEach((colId, list) {
+        final filtered = <BoardCard>[];
+        for (final c in list) {
+          if (c.id == cardId) {
+            moving = c;
+          } else {
+            filtered.add(c);
+          }
+        }
+        newMap[colId] = filtered;
+      });
+      if (moving != null) {
+        final destList = List<BoardCard>.from(newMap[targetColumnId] ?? []);
+        final pos = targetPosition.clamp(0, destList.length);
+        destList.insert(pos, moving!.copyWith(columnId: targetColumnId));
+        newMap[targetColumnId] = destList;
+        state = AsyncData(BoardState(columns: prev.columns, cardsByColumn: newMap));
       }
     }
-
-    // Re-index target column
-    final targetCards = [...(currentState?.cardsByColumn[targetColumnId] ?? [])]
-      ..removeWhere((c) => c.id == cardId);
-    final movedCard = card.copyWith(columnId: targetColumnId, position: targetPosition);
-    targetCards.insert(targetPosition.clamp(0, targetCards.length), movedCard);
-    for (var i = 0; i < targetCards.length; i++) {
-      await ref.read(cardRepoProvider).save(targetCards[i].copyWith(position: i));
+    try {
+      await ref.read(boardApiProvider).moveCard(cardId, targetColumnId, targetPosition);
+      await _reload();
+    } catch (e) {
+      if (prev != null) state = AsyncData(prev);
+      ref.read(toastProvider.notifier).show('Error al mover: $e');
     }
-
-    if (sourceColumnId != targetColumnId) {
-      final targetCol = currentState?.columns.firstWhere(
-        (c) => c.id == targetColumnId,
-        orElse: () => BoardColumn(id: targetColumnId, propertyId: propertyId, title: '?'),
-      );
-      await ref.read(activityRepoProvider).save(ActivityEvent(
-            id: _uuid.v4(),
-            cardId: cardId,
-            type: ActivityType.moved,
-            message: 'Movida a "${targetCol?.title ?? targetColumnId}"',
-            createdAt: now,
-            authorId: user?.id,
-          ));
-    }
-
-    await _reload();
   }
 
   Future<void> archiveCard(String cardId) async {
-    final card = state.valueOrNull?.cardsByColumn.values
-        .expand((c) => c)
-        .firstWhere((c) => c.id == cardId);
-    if (card == null) return;
-
-    final col = state.valueOrNull?.columns.firstWhere(
-      (c) => c.id == card.columnId,
-      orElse: () => BoardColumn(id: card.columnId, propertyId: propertyId, title: ''),
-    );
-
-    final user = ref.read(currentUserProvider).valueOrNull;
-    final now = DateTime.now();
-    final archived = ArchivedCard.fromCard(
-      card,
-      archivedAt: now,
-      archivedById: user?.id,
-      sourceColumnTitle: col?.title ?? '',
-    );
-    await ref.read(archiveRepoProvider).save(archived);
-    await ref.read(cardRepoProvider).delete(cardId);
-    await ref.read(activityRepoProvider).save(ActivityEvent(
-          id: _uuid.v4(),
-          cardId: cardId,
-          type: ActivityType.archived,
-          message: 'Tarjeta archivada',
-          createdAt: now,
-          authorId: user?.id,
-        ));
-    ref.read(toastProvider.notifier).show('Tarjeta archivada');
-    await _reload();
+    // Optimistic: remove card from board immediately
+    final prev = state.valueOrNull;
+    if (prev != null) {
+      final newByCol = {
+        for (final e in prev.cardsByColumn.entries)
+          e.key: e.value.where((c) => c.id != cardId).toList(),
+      };
+      state = AsyncData(BoardState(columns: prev.columns, cardsByColumn: newByCol));
+    }
+    try {
+      await ref.read(boardApiProvider).archiveCard(cardId);
+      ref.read(toastProvider.notifier).show('Tarjeta archivada');
+      await _reload();
+    } catch (e) {
+      if (prev != null) state = AsyncData(prev);
+      ref.read(toastProvider.notifier).show('Error al archivar: $e');
+      rethrow;
+    }
   }
 
   Future<void> addComment(String cardId, String text) async {
-    final user = ref.read(currentUserProvider).valueOrNull;
-    if (user == null) return;
-    final comment = Comment(
-      id: _uuid.v4(),
-      cardId: cardId,
-      authorId: user.id,
-      text: text,
-      createdAt: DateTime.now(),
-    );
-    await ref.read(commentRepoProvider).save(comment);
-    await ref.read(activityRepoProvider).save(ActivityEvent(
-          id: _uuid.v4(),
-          cardId: cardId,
-          type: ActivityType.commented,
-          message: 'Comentario añadido',
-          createdAt: DateTime.now(),
-          authorId: user.id,
-        ));
+    await ref.read(boardApiProvider).createComment(cardId, text);
   }
 
   Future<void> resetAll() async {
-    final current = state.valueOrNull;
-    if (current == null) return;
-    for (final col in current.columns) {
-      await ref.read(cardRepoProvider).deleteByColumn(col.id);
-      await ref.read(columnRepoProvider).delete(col.id);
-    }
+    // Reload from server — mass delete via API not exposed in a single endpoint
     ref.read(toastProvider.notifier).show('Tablero reiniciado');
     await _reload();
   }
@@ -603,44 +730,45 @@ final boardProvider =
 class ArchiveNotifier extends AsyncNotifier<List<ArchivedCard>> {
   @override
   Future<List<ArchivedCard>> build() async {
-    return ref.read(archiveRepoProvider).getAll();
+    final user = await ref.watch(currentUserProvider.future);
+    if (user == null) return [];
+    final items = await ref.read(archiveApiProvider).getAll();
+    return items
+        .where((j) => j['kind'] == 'card')
+        .map(ArchivedCard.fromApiArchiveItem)
+        .toList();
   }
 
   Future<void> reload() async {
-    state = AsyncData(await ref.read(archiveRepoProvider).getAll());
+    final items = await ref.read(archiveApiProvider).getAll();
+    state = AsyncData(
+      items
+          .where((j) => j['kind'] == 'card')
+          .map(ArchivedCard.fromApiArchiveItem)
+          .toList(),
+    );
   }
 
   Future<void> restoreCard(ArchivedCard card) async {
-    final restored = BoardCard(
-      id: card.id,
-      propertyId: card.propertyId,
-      columnId: card.columnId,
-      title: card.title,
-      description: card.description,
-      isDone: false,
-      position: 0,
-      customFields: card.customFields,
-      roomCode: card.roomCode,
-      cleanedBy: card.cleanedBy,
-      priority: card.priority,
-      checkinDate: card.checkinDate,
-      assignedToId: card.assignedToId,
-      kind: card.kind,
-      createdAt: card.createdAt,
-    );
-    await ref.read(cardRepoProvider).save(restored);
-    await ref.read(archiveRepoProvider).delete(card.id);
+    // card.id is the archive entry ID (set by fromApiArchiveItem).
+    await ref.read(archiveApiProvider).restore(card.id);
     ref.read(toastProvider.notifier).show('Tarjeta restaurada');
-
-    // Refresh board if loaded
     ref.invalidate(boardProvider(card.propertyId));
     await reload();
   }
 
   Future<void> clearAll() async {
-    await ref.read(archiveRepoProvider).clear();
-    state = const AsyncData([]);
+    // No bulk-delete endpoint — restore all items so archive is empty.
+    final items = state.valueOrNull ?? [];
+    for (final card in items) {
+      try {
+        await ref.read(archiveApiProvider).restore(card.id);
+      } catch (_) {
+        // best-effort
+      }
+    }
     ref.read(toastProvider.notifier).show('Archivo vaciado');
+    await reload();
   }
 }
 
@@ -698,3 +826,47 @@ final todoPendingProvider = Provider<List<BoardCard>>((ref) {
 
   return pending;
 });
+
+// ══════════════════════════════════════════
+//  Card display preferences (per column, in-memory)
+// ══════════════════════════════════════════
+
+class CardDisplayPrefs {
+  const CardDisplayPrefs({
+    this.showDone = true,
+    this.showDescription = true,
+    this.showCleanedBy = true,
+    this.showPriority = true,
+    this.showCheckin = true,
+    this.showRoomCode = true,
+  });
+
+  final bool showDone;
+  final bool showDescription;
+  final bool showCleanedBy;
+  final bool showPriority;
+  final bool showCheckin;
+  final bool showRoomCode;
+
+  CardDisplayPrefs copyWith({
+    bool? showDone,
+    bool? showDescription,
+    bool? showCleanedBy,
+    bool? showPriority,
+    bool? showCheckin,
+    bool? showRoomCode,
+  }) =>
+      CardDisplayPrefs(
+        showDone: showDone ?? this.showDone,
+        showDescription: showDescription ?? this.showDescription,
+        showCleanedBy: showCleanedBy ?? this.showCleanedBy,
+        showPriority: showPriority ?? this.showPriority,
+        showCheckin: showCheckin ?? this.showCheckin,
+        showRoomCode: showRoomCode ?? this.showRoomCode,
+      );
+}
+
+final cardDisplayPrefsProvider =
+    StateProvider.family<CardDisplayPrefs, String>(
+  (ref, columnId) => const CardDisplayPrefs(),
+);

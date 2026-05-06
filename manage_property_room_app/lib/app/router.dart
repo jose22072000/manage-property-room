@@ -10,27 +10,51 @@ import '../presentation/pages/todo_page.dart';
 import '../presentation/pages/archive_page.dart';
 import '../presentation/pages/settings_page.dart';
 import '../presentation/pages/users_page.dart';
+import '../presentation/pages/api_debug_page.dart';
+import '../presentation/pages/login_page.dart';
 import '../presentation/widgets/shared/app_shell.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
+class _RouterRefreshNotifier extends ChangeNotifier {
+  _RouterRefreshNotifier(WidgetRef ref) {
+    ref.listen(currentUserProvider, (prev, next) => notifyListeners());
+  }
+}
+
 GoRouter buildRouter(WidgetRef ref) {
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/',
+    refreshListenable: _RouterRefreshNotifier(ref),
     redirect: (context, state) {
-      final user = ref.read(currentUserProvider).valueOrNull;
-      if (user == null) return null;
+      final userAsync = ref.read(currentUserProvider);
+      // Still loading Hive — don't redirect yet
+      if (userAsync is AsyncLoading) return null;
 
-      final isAdminOnly = state.matchedLocation.startsWith('/settings') ||
-          state.matchedLocation.startsWith('/users');
-      if (isAdminOnly && !Policy.canBoard(user, BoardAction.manageUsers)) {
-        return '/';
+      final user = userAsync.valueOrNull;
+      final onLogin = state.matchedLocation == '/login';
+
+      if (user == null && !onLogin) return '/login';
+      if (user != null && onLogin) return '/';
+
+      // Admin-only pages
+      if (user != null) {
+        final isAdminOnly = state.matchedLocation.startsWith('/settings') ||
+            state.matchedLocation.startsWith('/users');
+        if (isAdminOnly && !Policy.canBoard(user, BoardAction.manageUsers)) {
+          return '/';
+        }
       }
       return null;
     },
     routes: [
+      // Login — outside shell
+      GoRoute(
+        path: '/login',
+        pageBuilder: (_, state) => const NoTransitionPage(child: LoginPage()),
+      ),
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
         builder: (context, state, child) => AppShell(
@@ -58,11 +82,18 @@ GoRouter buildRouter(WidgetRef ref) {
             path: '/users',
             pageBuilder: (_, state) => const NoTransitionPage(child: UsersPage()),
           ),
+          GoRoute(
+            path: '/api-debug',
+            pageBuilder: (_, state) => const NoTransitionPage(child: ApiDebugPage()),
+          ),
           // Board page INSIDE the shell (like React — AppShell wraps all pages)
           GoRoute(
             path: '/properties/:id/board',
             pageBuilder: (_, state) => NoTransitionPage(
-              child: BoardPage(propertyId: state.pathParameters['id']!),
+              child: BoardPage(
+                propertyId: state.pathParameters['id']!,
+                highlightCardId: state.extra as String?,
+              ),
             ),
           ),
         ],

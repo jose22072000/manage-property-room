@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
 import '../../application/notifiers/notifiers.dart';
 import '../../domain/domain.dart';
-
-const _uuid = Uuid();
 
 class UsersPage extends ConsumerWidget {
   const UsersPage({super.key});
@@ -134,8 +131,14 @@ class _UserEditorSheet extends StatefulWidget {
 class _UserEditorSheetState extends State<_UserEditorSheet> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _initialsCtrl;
+  late final TextEditingController _emailCtrl;
+  late final TextEditingController _passwordCtrl;
   late UserRole _role;
   late Set<String> _assignedIds;
+  bool _saving = false;
+  String? _error;
+
+  bool get _isNew => widget.existing == null;
 
   @override
   void initState() {
@@ -143,6 +146,8 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
     final u = widget.existing;
     _nameCtrl = TextEditingController(text: u?.name ?? '');
     _initialsCtrl = TextEditingController(text: u?.initials ?? '');
+    _emailCtrl = TextEditingController();
+    _passwordCtrl = TextEditingController();
     _role = u?.role ?? UserRole.cleaning;
     _assignedIds = Set.from(u?.assignedPropertyIds ?? []);
   }
@@ -151,6 +156,8 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
   void dispose() {
     _nameCtrl.dispose();
     _initialsCtrl.dispose();
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
     super.dispose();
   }
 
@@ -165,10 +172,25 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              widget.existing == null ? 'Nuevo usuario' : 'Editar usuario',
+              _isNew ? 'Nuevo usuario' : 'Editar usuario',
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
             ),
             const SizedBox(height: 16),
+            if (_isNew) ...[
+              TextField(
+                controller: _emailCtrl,
+                decoration: const InputDecoration(labelText: 'Email'),
+                keyboardType: TextInputType.emailAddress,
+                autocorrect: false,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _passwordCtrl,
+                decoration: const InputDecoration(labelText: 'Contraseña'),
+                obscureText: true,
+              ),
+              const SizedBox(height: 12),
+            ],
             TextField(
               controller: _nameCtrl,
               decoration: const InputDecoration(labelText: 'Nombre completo'),
@@ -215,12 +237,18 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
                 );
               }).toList(),
             ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12)),
+            ],
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: _save,
-                child: const Text('Guardar'),
+                onPressed: _saving ? null : _save,
+                child: _saving
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Guardar'),
               ),
             ),
           ],
@@ -229,17 +257,41 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
     );
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (_nameCtrl.text.trim().isEmpty) return;
-    final user = AppUser(
-      id: widget.existing?.id ?? _uuid.v4(),
-      name: _nameCtrl.text.trim(),
-      initials: _initialsCtrl.text.trim().toUpperCase(),
-      role: _role,
-      assignedPropertyIds: _assignedIds.toList(),
-    );
-    widget.ref.read(usersProvider.notifier).saveUser(user);
-    Navigator.pop(context);
+    if (_isNew && _emailCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'El email es obligatorio');
+      return;
+    }
+    if (_isNew && _passwordCtrl.text.isEmpty) {
+      setState(() => _error = 'La contraseña es obligatoria');
+      return;
+    }
+    setState(() { _saving = true; _error = null; });
+    try {
+      if (_isNew) {
+        await widget.ref.read(usersProvider.notifier).createUser(
+              email: _emailCtrl.text.trim(),
+              password: _passwordCtrl.text,
+              name: _nameCtrl.text.trim(),
+              initials: _initialsCtrl.text.trim().toUpperCase(),
+              role: _role.name,
+              assignedPropertyIds: _assignedIds.toList(),
+            );
+      } else {
+        final updated = AppUser(
+          id: widget.existing!.id,
+          name: _nameCtrl.text.trim(),
+          initials: _initialsCtrl.text.trim().toUpperCase(),
+          role: _role,
+          assignedPropertyIds: _assignedIds.toList(),
+        );
+        await widget.ref.read(usersProvider.notifier).updateUser(updated);
+      }
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() { _saving = false; _error = e.toString(); });
+    }
   }
 }
 

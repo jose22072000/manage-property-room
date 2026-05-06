@@ -196,7 +196,6 @@ class ColumnConfig {
     this.showAssign = true,
     this.showPriority = true,
     this.showCheckin = true,
-    this.showActivity = true,
   });
 
   final bool showDescription;
@@ -205,7 +204,6 @@ class ColumnConfig {
   final bool showAssign;
   final bool showPriority;
   final bool showCheckin;
-  final bool showActivity;
 
   ColumnConfig copyWith({
     bool? showDescription,
@@ -214,7 +212,6 @@ class ColumnConfig {
     bool? showAssign,
     bool? showPriority,
     bool? showCheckin,
-    bool? showActivity,
   }) =>
       ColumnConfig(
         showDescription: showDescription ?? this.showDescription,
@@ -223,7 +220,6 @@ class ColumnConfig {
         showAssign: showAssign ?? this.showAssign,
         showPriority: showPriority ?? this.showPriority,
         showCheckin: showCheckin ?? this.showCheckin,
-        showActivity: showActivity ?? this.showActivity,
       );
 
   Map<String, dynamic> toJson() => {
@@ -233,7 +229,6 @@ class ColumnConfig {
         'showAssign': showAssign,
         'showPriority': showPriority,
         'showCheckin': showCheckin,
-        'showActivity': showActivity,
       };
 
   factory ColumnConfig.fromJson(Map<String, dynamic> j) => ColumnConfig(
@@ -243,7 +238,6 @@ class ColumnConfig {
         showAssign: j['showAssign'] as bool? ?? true,
         showPriority: j['showPriority'] as bool? ?? true,
         showCheckin: j['showCheckin'] as bool? ?? true,
-        showActivity: j['showActivity'] as bool? ?? true,
       );
 }
 
@@ -312,8 +306,9 @@ class BoardColumn {
         position: j['position'] as int? ?? 0,
         description: j['description'] as String? ?? '',
         fieldIds: List<String>.from(j['fieldIds'] as List? ?? []),
-        config: j['config'] != null
-            ? ColumnConfig.fromJson(Map<String, dynamic>.from(j['config'] as Map))
+        config: (j['columnConfig'] ?? j['config']) != null
+            ? ColumnConfig.fromJson(Map<String, dynamic>.from(
+                (j['columnConfig'] ?? j['config']) as Map))
             : const ColumnConfig(),
       );
 
@@ -345,6 +340,7 @@ class BoardCard {
     this.assignedToId,
     this.kind = CardKind.room,
     required this.createdAt,
+    this.doneAt,
   });
 
   final String id;
@@ -363,6 +359,8 @@ class BoardCard {
   final String? assignedToId;
   final CardKind kind;
   final DateTime createdAt;
+  /// Set by toggle-done API. Null when not done.
+  final DateTime? doneAt;
 
   BoardCard copyWith({
     String? id,
@@ -380,8 +378,10 @@ class BoardCard {
     String? assignedToId,
     CardKind? kind,
     DateTime? createdAt,
+    DateTime? doneAt,
     bool clearCheckin = false,
     bool clearAssignee = false,
+    bool clearDoneAt = false,
   }) =>
       BoardCard(
         id: id ?? this.id,
@@ -399,6 +399,7 @@ class BoardCard {
         assignedToId: clearAssignee ? null : (assignedToId ?? this.assignedToId),
         kind: kind ?? this.kind,
         createdAt: createdAt ?? this.createdAt,
+        doneAt: clearDoneAt ? null : (doneAt ?? this.doneAt),
       );
 
   Map<String, dynamic> toJson() => {
@@ -437,6 +438,7 @@ class BoardCard {
         createdAt: j['createdAt'] != null
             ? DateTime.parse(j['createdAt'] as String)
             : DateTime.now(),
+        doneAt: j['doneAt'] != null ? DateTime.parse(j['doneAt'] as String) : null,
       );
 
   @override
@@ -531,6 +533,35 @@ class ArchivedCard extends BoardCard {
         archivedById: j['archivedById'] as String?,
         sourceColumnTitle: j['sourceColumnTitle'] as String? ?? '',
       );
+
+  /// Parses from the API `/archive` list response shape:
+  ///   { "id": "<archiveEntryId>", "kind": "card", "payload": {...}, "archivedAt": "..." }
+  /// [id] is set to the archive entry id so `restore(id)` works correctly.
+  factory ArchivedCard.fromApiArchiveItem(Map<String, dynamic> j) {
+    final payload = Map<String, dynamic>.from(j['payload'] as Map);
+    final archivedAt = DateTime.parse(j['archivedAt'] as String);
+    return ArchivedCard(
+      id: j['id'] as String, // archive entry ID used for restore
+      propertyId: payload['propertyId'] as String? ?? '',
+      columnId: payload['columnId'] as String? ?? '',
+      title: payload['title'] as String? ?? '',
+      description: payload['description'] as String? ?? '',
+      isDone: payload['isDone'] as bool? ?? false,
+      position: payload['position'] as int? ?? 0,
+      customFields: Map<String, dynamic>.from(payload['customFields'] as Map? ?? {}),
+      roomCode: payload['roomCode'] as String? ?? '',
+      cleanedBy: payload['cleanedBy'] as String? ?? '',
+      priority: CardPriority.values.byName(payload['priority'] as String? ?? 'normal'),
+      checkinDate: payload['checkinDate'] != null ? DateTime.parse(payload['checkinDate'] as String) : null,
+      assignedToId: payload['assignedToId'] as String?,
+      kind: CardKind.values.byName(payload['kind'] as String? ?? 'room'),
+      createdAt: payload['createdAt'] != null
+          ? DateTime.parse(payload['createdAt'] as String)
+          : archivedAt,
+      archivedAt: archivedAt,
+      sourceColumnTitle: '',
+    );
+  }
 }
 
 // ─────────────────────────────────────────

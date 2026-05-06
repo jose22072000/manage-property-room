@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../application/notifiers/notifiers.dart';
 import '../../../core/date_formatters.dart';
@@ -73,60 +74,52 @@ class _CardDetailSheetState extends ConsumerState<CardDetailSheet> {
   Widget build(BuildContext context) {
     final isDesktop = Responsive.isTabletOrDesktop(context);
 
-    if (isDesktop) {
-      return _buildDialog(context);
-    }
-
-    // Mobile: DraggableScrollableSheet inside modal
     return DraggableScrollableSheet(
-      initialChildSize: 0.85,
+      initialChildSize: isDesktop ? 0.92 : 0.85,
       minChildSize: 0.5,
       maxChildSize: 1.0,
       expand: false,
-      builder: (_, scrollController) => _buildContent(context, scrollController),
-    );
-  }
-
-  Widget _buildDialog(BuildContext context) {
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
-      child: SizedBox(
-        width: 720,
-        height: MediaQuery.sizeOf(context).height * 0.8,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Main content (left 60%)
-            Expanded(
-              flex: 3,
-              child: _buildContent(context, null),
-            ),
-            // Sidebar (right 40%)
-            Container(
-              width: 1,
-              height: double.infinity,
-              color: const Color(0xFFE2E8F0),
-            ),
-            SizedBox(
-              width: 220,
-              child: _Sidebar(
-                card: _card,
-                allColumns: widget.allColumns,
-                users: ref.watch(usersProvider).valueOrNull ?? [],
-                canEdit: _can(CardAction.editCustomField),
-                canAssign: _can(CardAction.assign),
-                canSetPriority: _can(CardAction.setPriority),
-                canArchive: _can(CardAction.archive),
-                onMoveToColumn: (colId) => _moveToColumn(colId),
-                onAssign: (userId) => _save(_card.copyWith(assignedToId: userId, clearAssignee: userId == null)),
-                onSetPriority: (p) => _save(_card.copyWith(priority: p)),
-                onSetCheckin: (date) => _save(_card.copyWith(checkinDate: date, clearCheckin: date == null)),
-                onArchive: _archiveCard,
+      builder: (_, scrollController) {
+        if (isDesktop) {
+          return ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            child: Material(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: _buildContent(context, scrollController),
+                  ),
+                  Container(
+                    width: 1,
+                    height: double.infinity,
+                    color: const Color(0xFFE2E8F0),
+                  ),
+                  SizedBox(
+                    width: 220,
+                    child: _Sidebar(
+                      card: _card,
+                      allColumns: widget.allColumns,
+                      users: ref.watch(usersProvider).valueOrNull ?? [],
+                      canEdit: _can(CardAction.editCustomField),
+                      canAssign: _can(CardAction.assign),
+                      canSetPriority: _can(CardAction.setPriority),
+                      canArchive: _can(CardAction.archive),
+                      onMoveToColumn: (colId) => _moveToColumn(colId),
+                      onAssign: (userId) => _save(_card.copyWith(assignedToId: userId, clearAssignee: userId == null)),
+                      onSetPriority: (p) => _save(_card.copyWith(priority: p)),
+                      onSetCheckin: (date) => _save(_card.copyWith(checkinDate: date, clearCheckin: date == null)),
+                      onArchive: _archiveCard,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
+          );
+        }
+        return _buildContent(context, scrollController);
+      },
     );
   }
 
@@ -267,9 +260,9 @@ class _CardDetailSheetState extends ConsumerState<CardDetailSheet> {
             ),
           if (config.showCustomFields)
             SliverList.builder(
-              itemCount: fields.where((f) => f.enabled).length,
+              itemCount: fields.where((f) => f.enabled && f.showOnCard).length,
               itemBuilder: (_, i) {
-                final field = fields.where((f) => f.enabled).elementAt(i);
+                final field = fields.where((f) => f.enabled && f.showOnCard).elementAt(i);
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
                   child: _CustomFieldRow(
@@ -311,18 +304,16 @@ class _CardDetailSheetState extends ConsumerState<CardDetailSheet> {
               ),
             ),
 
-          // Activity
-          if (config.showActivity)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: _SectionLabel(icon: Icons.history_outlined, label: 'Actividad'),
-              ),
+          // Activity (always shown — not configurable via API)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: _SectionLabel(icon: Icons.history_outlined, label: 'Actividad'),
             ),
-          if (config.showActivity)
-            SliverToBoxAdapter(
-              child: _ActivitySection(cardId: _card.id, users: users),
-            ),
+          ),
+          SliverToBoxAdapter(
+            child: _ActivitySection(cardId: _card.id, users: users),
+          ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
@@ -352,8 +343,12 @@ class _CardDetailSheetState extends ConsumerState<CardDetailSheet> {
       ),
     );
     if (confirmed == true && mounted) {
-      await ref.read(boardProvider(widget.propertyId).notifier).archiveCard(_card.id);
-      if (mounted) Navigator.pop(context);
+      try {
+        await ref.read(boardProvider(widget.propertyId).notifier).archiveCard(_card.id);
+        if (mounted) Navigator.pop(context);
+      } catch (_) {
+        // Error toast already shown by notifier
+      }
     }
   }
 }
@@ -511,18 +506,36 @@ class _Sidebar extends StatelessWidget {
             _SidebarSection(
               icon: Icons.flag_outlined,
               label: 'Prioridad',
-              child: Wrap(
-                spacing: 4,
-                children: CardPriority.values.map((p) {
-                  return ChoiceChip(
-                    label: Text(PriorityPalette.label(p), style: const TextStyle(fontSize: 11)),
-                    selected: card.priority == p,
-                    selectedColor: PriorityPalette.color(p).withValues(alpha: 0.2),
-                    onSelected: (_) => onSetPriority(p),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                  );
-                }).toList(),
+              child: InkWell(
+                onTap: () => _showPriorityPicker(context),
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: PriorityPalette.color(card.priority),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          PriorityPalette.label(card.priority),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      const Icon(Icons.expand_more, size: 16, color: Color(0xFF94A3B8)),
+                    ],
+                  ),
+                ),
               ),
             ),
 
@@ -560,6 +573,40 @@ class _Sidebar extends StatelessWidget {
               label: const Text('Archivar', style: TextStyle(fontSize: 13)),
               style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFEF4444), side: const BorderSide(color: Color(0xFFEF4444))),
             ),
+        ],
+      ),
+    );
+  }
+
+  void _showPriorityPicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Prioridad', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+          ),
+          ...CardPriority.values.map((p) => ListTile(
+                leading: Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: PriorityPalette.color(p),
+                  ),
+                ),
+                title: Text(PriorityPalette.label(p)),
+                trailing: p == card.priority
+                    ? const Icon(Icons.check, color: Color(0xFF2563EB))
+                    : null,
+                onTap: () {
+                  onSetPriority(p);
+                  Navigator.pop(context);
+                },
+              )),
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -730,6 +777,7 @@ class _CustomFieldRowState extends State<_CustomFieldRow> {
 
   Widget _buildSelect() {
     final current = widget.value?.toString();
+    final displayValue = (current != null && widget.field.options.contains(current)) ? current : null;
     return Row(
       children: [
         SizedBox(
@@ -738,18 +786,70 @@ class _CustomFieldRowState extends State<_CustomFieldRow> {
               style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
         ),
         Expanded(
-          child: DropdownButtonFormField<String>(
-            initialValue: widget.field.options.contains(current) ? current : null,
-            isDense: true,
-            decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
-            items: [
-              const DropdownMenuItem(value: null, child: Text('—', style: TextStyle(fontSize: 13))),
-              ...widget.field.options.map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontSize: 13)))),
-            ],
-            onChanged: widget.canEdit ? (v) => widget.onChanged(v) : null,
+          child: InkWell(
+            onTap: widget.canEdit ? () => _showSelectPicker(context) : null,
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      displayValue ?? '—',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: displayValue == null ? const Color(0xFF94A3B8) : null,
+                      ),
+                    ),
+                  ),
+                  if (widget.canEdit)
+                    const Icon(Icons.expand_more, size: 16, color: Color(0xFF94A3B8)),
+                ],
+              ),
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  void _showSelectPicker(BuildContext context) {
+    final current = widget.value?.toString();
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              widget.field.label,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+            ),
+          ),
+          ListTile(
+            title: const Text('—', style: TextStyle(color: Color(0xFF94A3B8))),
+            trailing: current == null ? const Icon(Icons.check, color: Color(0xFF2563EB)) : null,
+            onTap: () {
+              widget.onChanged(null);
+              Navigator.pop(context);
+            },
+          ),
+          ...widget.field.options.map((o) => ListTile(
+                title: Text(o),
+                trailing: o == current ? const Icon(Icons.check, color: Color(0xFF2563EB)) : null,
+                onTap: () {
+                  widget.onChanged(o);
+                  Navigator.pop(context);
+                },
+              )),
+          const SizedBox(height: 8),
+        ],
+      ),
     );
   }
 
@@ -789,7 +889,7 @@ class _CustomFieldRowState extends State<_CustomFieldRow> {
                         }
                       : null,
                 )),
-            if (widget.canEdit && !kIsWeb)
+            if (widget.canEdit)
               GestureDetector(
                 onTap: () => _pickImage(paths),
                 child: Container(
@@ -810,14 +910,58 @@ class _CustomFieldRowState extends State<_CustomFieldRow> {
   }
 
   Future<void> _pickImage(List<String> existing) async {
-    // image_picker not available in this build — show informational message
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selección de imágenes no disponible en esta plataforma.')),
-      );
+    if (kIsWeb) {
+      // Web: file dialog
+      final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (file == null) return;
+      // Store blob URL (valid for this session)
+      final path = file.path;
+      widget.onChanged([...existing, path]);
+    } else if (Platform.isAndroid || Platform.isIOS) {
+      await _pickImageMobile(existing);
+    } else {
+      // Desktop (Linux, Windows, macOS)
+      final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (file == null) return;
+      final path = await saveCardImage(widget.cardId, file.path);
+      widget.onChanged([...existing, path]);
     }
   }
+
+  Future<void> _pickImageMobile(List<String> existing) async {
+    if (!context.mounted) return;
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Añadir imagen', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined),
+            title: const Text('Cámara'),
+            onTap: () => Navigator.pop(context, ImageSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('Galería'),
+            onTap: () => Navigator.pop(context, ImageSource.gallery),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+    if (source == null || !context.mounted) return;
+    final file = await ImagePicker().pickImage(source: source);
+    if (file == null) return;
+    final path = await saveCardImage(widget.cardId, file.path);
+    widget.onChanged([...existing, path]);
+  }
 }
+
+enum _ImageSource { camera, gallery }
 
 // ─────────────────────────────────────────
 //  Image thumbnail
@@ -833,7 +977,19 @@ class _ImageThumb extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget image;
     if (kIsWeb) {
-      image = const Icon(Icons.image_outlined, size: 32, color: Color(0xFF94A3B8));
+      // On web, path is a blob URL — display with Image.network
+      if (path.startsWith('blob:') || path.startsWith('http') || path.startsWith('data:')) {
+        image = Image.network(
+          path,
+          width: 72,
+          height: 72,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) =>
+              const Icon(Icons.broken_image_outlined, color: Color(0xFF94A3B8)),
+        );
+      } else {
+        image = const Icon(Icons.image_outlined, size: 32, color: Color(0xFF94A3B8));
+      }
     } else {
       image = FutureBuilder<String?>(
         future: resolveCardImage(path),
