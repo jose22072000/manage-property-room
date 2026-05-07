@@ -463,10 +463,14 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
     return BoardState(columns: columns, cardsByColumn: cardsByColumn);
   }
 
-  Future<void> _reload() async {
+  /// Reloads board state from the API.
+  /// Pass [userAction] = true when triggered by a real change (not polling)
+  /// so the audit page refreshes to show the new entry.
+  Future<void> _reload({bool userAction = false}) async {
     state = AsyncData(await _load());
-    // Notify audit page that something changed so it can auto-refresh.
-    ref.read(auditVersionProvider.notifier).update((v) => v + 1);
+    if (userAction) {
+      ref.read(auditVersionProvider.notifier).update((v) => v + 1);
+    }
   }
 
   // ── Columns ───────────────────────────────────────
@@ -479,18 +483,18 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
           color: color,
           position: position,
         );
-    await _reload();
+    await _reload(userAction: true);
     ref.read(toastProvider.notifier).show('Lista "$title" creada');
   }
 
   Future<void> renameColumn(String columnId, String newTitle) async {
     await ref.read(boardApiProvider).updateColumn(columnId, {'title': newTitle});
-    await _reload();
+    await _reload(userAction: true);
   }
 
   Future<void> setColumnColor(String columnId, ColumnColor color) async {
     await ref.read(boardApiProvider).updateColumn(columnId, {'color': color.name});
-    await _reload();
+    await _reload(userAction: true);
   }
 
   Future<void> updateColumnConfig(String columnId, ColumnConfig config) async {
@@ -506,7 +510,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
       await ref
           .read(boardApiProvider)
           .updateColumn(columnId, {'columnConfig': config.toJson()});
-      await _reload();
+      await _reload(userAction: true);
     } catch (e) {
       if (prev != null) state = AsyncData(prev);
       ref.read(toastProvider.notifier).show('Error: ${_errMsg(e)}');
@@ -517,7 +521,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
     await ref
         .read(boardApiProvider)
         .updateColumn(columnId, {'description': description});
-    await _reload();
+    await _reload(userAction: true);
   }
 
   Future<void> moveColumn(int fromIndex, int toIndex) async {
@@ -525,7 +529,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
     if (current == null) return;
     final col = current.columns[fromIndex];
     await ref.read(boardApiProvider).moveColumn(col.id, toIndex);
-    await _reload();
+    await _reload(userAction: true);
   }
 
   Future<void> reorderColumns(int oldIndex, int newIndex) async {
@@ -543,7 +547,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
     try {
       final api = ref.read(boardApiProvider);
       await api.reorderColumns(propertyId, cols.map((c) => c.id).toList());
-      await _reload();
+      await _reload(userAction: true);
     } catch (e) {
       state = AsyncData(current);
       ref.read(toastProvider.notifier).show('Error al reordenar: ${_errMsg(e)}');
@@ -556,7 +560,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
         .firstOrNull;
     await ref.read(boardApiProvider).archiveColumn(columnId);
     ref.read(toastProvider.notifier).show('Lista "${col?.title ?? ''}" archivada');
-    await _reload();
+    await _reload(userAction: true);
   }
 
   Future<void> copyColumn(String columnId, {String? toPropertyId}) async {
@@ -568,21 +572,21 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
       await api.duplicateColumn(columnId);
     }
     ref.read(toastProvider.notifier).show('Lista copiada');
-    await _reload();
+    await _reload(userAction: true);
   }
 
   Future<void> moveAllCards(String fromColumnId, String toColumnId) async {
     if (fromColumnId == toColumnId) return;
     await ref.read(boardApiProvider).moveAllCardsToColumn(fromColumnId, toColumnId);
     ref.read(toastProvider.notifier).show('Tarjetas movidas');
-    await _reload();
+    await _reload(userAction: true);
   }
 
   Future<void> archiveAllCardsIn(String columnId) async {
     final count = state.valueOrNull?.cardsByColumn[columnId]?.length ?? 0;
     await ref.read(boardApiProvider).archiveAllCardsInColumn(columnId);
     ref.read(toastProvider.notifier).show('$count tarjetas archivadas');
-    await _reload();
+    await _reload(userAction: true);
   }
 
   // ── Cards ─────────────────────────────────────────
@@ -602,7 +606,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
           position: position,
         );
     final card = BoardCard.fromJson(json);
-    await _reload();
+    await _reload(userAction: true);
     return card;
   }
 
@@ -631,7 +635,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
     };
     try {
       await ref.read(boardApiProvider).updateCard(card.id, body);
-      await _reload();
+      await _reload(userAction: true);
     } catch (e) {
       if (prev != null) state = AsyncData(prev);
       ref.read(toastProvider.notifier).show('Error al guardar tarjeta: ${_errMsg(e)}');
@@ -665,7 +669,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
       if (isNowDone && cleanedBy.isNotEmpty) {
         await ref.read(boardApiProvider).updateCard(cardId, {'cleanedBy': cleanedBy});
       }
-      await _reload();
+      await _reload(userAction: true);
     } catch (e) {
       if (prev != null) state = AsyncData(prev);
       ref.read(toastProvider.notifier).show('Error: ${_errMsg(e)}');
@@ -720,7 +724,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
     }
     try {
       await ref.read(boardApiProvider).moveCard(cardId, targetColumnId, targetPosition);
-      await _reload();
+      await _reload(userAction: true);
     } catch (e) {
       if (prev != null) state = AsyncData(prev);
       ref.read(toastProvider.notifier).show('Error al mover: ${_errMsg(e)}');
@@ -741,7 +745,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
       await ref.read(boardApiProvider).archiveCard(cardId);
       ref.read(toastProvider.notifier).show('Tarjeta archivada');
       ref.invalidate(archiveProvider);
-      await _reload();
+      await _reload(userAction: true);
     } catch (e) {
       if (prev != null) state = AsyncData(prev);
       ref.read(toastProvider.notifier).show('Error al archivar: ${_errMsg(e)}');
@@ -756,7 +760,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
   Future<void> resetAll() async {
     // Reload from server — mass delete via API not exposed in a single endpoint
     ref.read(toastProvider.notifier).show('Tablero reiniciado');
-    await _reload();
+    await _reload(userAction: true);
   }
 }
 
