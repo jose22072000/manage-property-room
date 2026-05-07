@@ -19,6 +19,7 @@ type ctxKey int
 const (
 	ctxUserID ctxKey = iota
 	ctxRole
+	ctxActorName
 )
 
 // ── JSON helpers ─────────────────────────────────────────────────────────────
@@ -88,6 +89,7 @@ func RequireAuth(issuer *auth.TokenIssuer) func(http.Handler) http.Handler {
 			}
 			ctx := context.WithValue(r.Context(), ctxUserID, claims.UserID)
 			ctx = context.WithValue(ctx, ctxRole, claims.Role)
+			ctx = context.WithValue(ctx, ctxActorName, claims.ActorName)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -112,6 +114,11 @@ func RequireRole(roles ...domain.UserRole) func(http.Handler) http.Handler {
 
 func UserIDFrom(ctx context.Context) string {
 	v, _ := ctx.Value(ctxUserID).(string)
+	return v
+}
+
+func ActorNameFrom(ctx context.Context) string {
+	v, _ := ctx.Value(ctxActorName).(string)
 	return v
 }
 

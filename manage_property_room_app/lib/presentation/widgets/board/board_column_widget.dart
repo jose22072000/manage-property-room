@@ -1,9 +1,7 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../application/notifiers/notifiers.dart';
 import '../../../core/property_visuals.dart';
-import '../../../core/responsive.dart';
 import '../../../domain/domain.dart';
 import '../../../permissions/policy.dart';
 import 'card_item_widget.dart';
@@ -58,47 +56,26 @@ class _BoardColumnWidgetState extends ConsumerState<BoardColumnWidget> {
     final canManage = user != null && Policy.canBoard(user, BoardAction.renameColumn);
     final canAddCard = user != null && Policy.canBoard(user, BoardAction.addCard);
 
-    // On desktop/tablet: DragTarget for receiving dragged cards
-    final cardBody = _buildCardList(cards, user); // capture BEFORE reassignment
-    Widget listView = cardBody;
-
-    if (!widget.isMobile) {
-      listView = DragTarget<BoardCard>(
-        builder: (_, candidateData, __) => AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          decoration: BoxDecoration(
-            color: candidateData.isNotEmpty
-                ? ColumnPalette.headerBg(col.color).withValues(alpha: 0.5)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: cardBody, // use captured original, never the DragTarget itself
-        ),
-        onWillAcceptWithDetails: (details) => details.data.columnId != col.id,
-        onAcceptWithDetails: (details) {
-          final card = details.data;
-          ref.read(boardProvider(widget.propertyId).notifier).moveCard(
-                card.id,
-                col.id,
-                cards.length,
-              );
-        },
-      );
-    }
+    // On desktop: drop zones between cards handle both reorder and cross-column moves
+    final Widget listView = _buildCardList(cards, user);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Column header
-        Container(
-          decoration: BoxDecoration(
-            color: ColumnPalette.headerBg(col.color),
-            borderRadius: BorderRadius.circular(10),
-            border: Border(left: BorderSide(color: ColumnPalette.borderColor(col.color), width: 3)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            decoration: BoxDecoration(
+              color: ColumnPalette.headerBg(col.color),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            foregroundDecoration: BoxDecoration(
+              border: Border(left: BorderSide(color: ColumnPalette.borderColor(col.color), width: 3)),
+            ),
+            child: Row(
+              children: [
               Container(
                 width: 8,
                 height: 8,
@@ -168,25 +145,26 @@ class _BoardColumnWidgetState extends ConsumerState<BoardColumnWidget> {
               ],
             ],
           ),
+          ),
         ),
         const SizedBox(height: 8),
-        // Cards list — white background with visible left border matching column color
+        // Cards list — slight gray bg so white cards visibly stand out
         Expanded(
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: const Color(0xFFF1F5F9),
               borderRadius: BorderRadius.circular(8),
-              border: Border(
-                left: BorderSide(
-                  color: ColumnPalette.borderColor(col.color),
-                  width: 3,
-                ),
-                top: BorderSide(color: const Color(0xFFE2E8F0)),
-                right: BorderSide(color: const Color(0xFFE2E8F0)),
-                bottom: BorderSide(color: const Color(0xFFE2E8F0)),
-              ),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
-            child: listView,
+            clipBehavior: Clip.antiAlias,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Colored left accent strip (replaces non-uniform border)
+                Container(width: 3, color: ColumnPalette.borderColor(col.color)),
+                Expanded(child: listView),
+              ],
+            ),
           ),
         ),
         // Add card button/form
@@ -217,107 +195,43 @@ class _BoardColumnWidgetState extends ConsumerState<BoardColumnWidget> {
   }
 
   Widget _buildCardList(List<BoardCard> cards, AppUser? user) {
-    if (widget.isMobile) {
-      // Mobile: plain list with move buttons; no drag-and-drop
-      return ListView.builder(
-        itemCount: cards.length,
-        padding: EdgeInsets.zero,
-        itemBuilder: (_, i) => _buildCardItem(cards[i], user),
-      );
+    final notifier = ref.read(boardProvider(widget.propertyId).notifier);
+    final colId = widget.column.id;
+
+    void handleDrop(BoardCard droppedCard, int insertIndex) {
+      if (droppedCard.columnId == colId) {
+        final oldIndex = cards.indexWhere((c) => c.id == droppedCard.id);
+        if (oldIndex == -1 || insertIndex == oldIndex || insertIndex == oldIndex + 1) return;
+        notifier.reorderCardsInColumn(colId, oldIndex, insertIndex);
+      } else {
+        notifier.moveCard(droppedCard.id, colId, insertIndex);
+      }
     }
 
-    // Desktop: ReorderableListView for within-column reorder.
-    // Each card also has a Draggable for between-column moves.
-    return ReorderableListView.builder(
-      buildDefaultDragHandles: false,
-      shrinkWrap: false,
-      padding: EdgeInsets.zero,
-      proxyDecorator: (child, _, animation) => Material(
-        color: Colors.transparent,
-        elevation: 8,
-        child: child,
-      ),
-      onReorder: (old, neu) {
-        ref
-            .read(boardProvider(widget.propertyId).notifier)
-            .reorderCardsInColumn(widget.column.id, old, neu);
-      },
-      itemCount: cards.length,
-      itemBuilder: (_, i) {
-        final card = cards[i];
-        final cardWidget = CardItemWidget(
-          card: card,
-          user: user,
-          propertyId: widget.propertyId,
-          isMobile: false,
-          onTap: () => _openCardDetail(card),
-          allColumns: widget.allColumns,
-        );
-        final feedback = Material(
-          elevation: 8,
-          borderRadius: BorderRadius.circular(10),
-          child: SizedBox(
-            width: 240,
-            child: Opacity(opacity: 0.9, child: cardWidget),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+      children: [
+        for (int i = 0; i < cards.length; i++)
+          _DndCard(
+            key: ValueKey(cards[i].id),
+            card: cards[i],
+            index: i,
+            user: user,
+            propertyId: widget.propertyId,
+            allColumns: widget.allColumns,
+            isMobile: widget.isMobile,
+            columnConfig: widget.column.config,
+            onTap: () => _openCardDetail(cards[i]),
+            onDrop: handleDrop,
           ),
-        );
-        final draggingPlaceholder = Opacity(
-          opacity: 0.3,
-          child: Padding(padding: const EdgeInsets.only(bottom: 8), child: cardWidget),
-        );
-
-        return KeyedSubtree(
-          key: ValueKey(card.id),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Drag handle for within-column reorder
-              Padding(
-                padding: const EdgeInsets.only(top: 8, bottom: 8, left: 2),
-                child: ReorderableDragStartListener(
-                  index: i,
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.grab,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
-                      child: const Icon(Icons.drag_handle,
-                          size: 15, color: Color(0xFFCBD5E1)),
-                    ),
-                  ),
-                ),
-              ),
-              // Card body — also Draggable for between-column moves
-              Expanded(
-                child: Draggable<BoardCard>(
-                  data: card,
-                  feedback: feedback,
-                  childWhenDragging: draggingPlaceholder,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 8, right: 4),
-                    child: cardWidget,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+        _TrailingDropZone(
+          onAccept: (card) => handleDrop(card, cards.length),
+        ),
+      ],
     );
   }
 
-  Widget _buildCardItem(BoardCard card, AppUser? user) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: CardItemWidget(
-        card: card,
-        user: user,
-        propertyId: widget.propertyId,
-        isMobile: widget.isMobile,
-        onTap: () => _openCardDetail(card),
-        allColumns: widget.allColumns,
-      ),
-    );
-  }
+
 
   void _openCardDetail(BoardCard card) {
     showModalBottomSheet(
@@ -382,10 +296,8 @@ class _ColumnConfigSheet extends ConsumerWidget {
       ref.read(boardProvider(propertyId).notifier).updateColumnConfig(col.id, next);
     }
 
-    final cardPrefs = ref.watch(cardDisplayPrefsProvider(col.id));
-    void setCardPrefs(CardDisplayPrefs next) {
-      ref.read(cardDisplayPrefsProvider(col.id).notifier).state = next;
-    }
+    final cardPrefs = cfg;
+    void setCardPrefs(ColumnConfig next) => setCfg(next);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
@@ -431,17 +343,21 @@ class _ColumnConfigSheet extends ConsumerWidget {
           const SizedBox(height: 14),
           _buildGroup(context, 'Tarjeta (vista compacta)', [
             _buildToggle('Check completado', Icons.check_circle_outline,
-                cardPrefs.showDone, (v) => setCardPrefs(cardPrefs.copyWith(showDone: v))),
+                cardPrefs.cardShowDone, (v) => setCardPrefs(cardPrefs.copyWith(cardShowDone: v))),
             _buildToggle('Descripción', Icons.notes_outlined,
-                cardPrefs.showDescription, (v) => setCardPrefs(cardPrefs.copyWith(showDescription: v))),
+                cardPrefs.cardShowDescription, (v) => setCardPrefs(cardPrefs.copyWith(cardShowDescription: v))),
             _buildToggle('Quién completó', Icons.how_to_reg_outlined,
-                cardPrefs.showCleanedBy, (v) => setCardPrefs(cardPrefs.copyWith(showCleanedBy: v))),
+                cardPrefs.cardShowCleanedBy, (v) => setCardPrefs(cardPrefs.copyWith(cardShowCleanedBy: v))),
             _buildToggle('Prioridad', Icons.flag_outlined,
-                cardPrefs.showPriority, (v) => setCardPrefs(cardPrefs.copyWith(showPriority: v))),
+                cardPrefs.cardShowPriority, (v) => setCardPrefs(cardPrefs.copyWith(cardShowPriority: v))),
+            _buildToggle('Borde de prioridad', Icons.border_color_outlined,
+                cardPrefs.cardShowPriorityBorder, (v) => setCardPrefs(cardPrefs.copyWith(cardShowPriorityBorder: v))),
             _buildToggle('Fecha de checkin', Icons.login_outlined,
-                cardPrefs.showCheckin, (v) => setCardPrefs(cardPrefs.copyWith(showCheckin: v))),
+                cardPrefs.cardShowCheckin, (v) => setCardPrefs(cardPrefs.copyWith(cardShowCheckin: v))),
             _buildToggle('Código de habitación', Icons.meeting_room_outlined,
-                cardPrefs.showRoomCode, (v) => setCardPrefs(cardPrefs.copyWith(showRoomCode: v))),
+                cardPrefs.cardShowRoomCode, (v) => setCardPrefs(cardPrefs.copyWith(cardShowRoomCode: v))),
+            _buildToggle('Miniatura de imagen', Icons.image_outlined,
+                cardPrefs.cardShowImage, (v) => setCardPrefs(cardPrefs.copyWith(cardShowImage: v))),
           ]),
         ],
       ),
@@ -503,3 +419,180 @@ class _ColumnConfigSheet extends ConsumerWidget {
   }
 }
 
+// ─────────────────────────────────────────
+//  DnD card — draggable + full-card drop target
+// ─────────────────────────────────────────
+
+enum _DropEdge { top, bottom }
+
+class _DndCard extends StatefulWidget {
+  const _DndCard({
+    super.key,
+    required this.card,
+    required this.index,
+    required this.user,
+    required this.propertyId,
+    required this.allColumns,
+    required this.onTap,
+    required this.onDrop,
+    required this.isMobile,
+    required this.columnConfig,
+  });
+
+  final BoardCard card;
+  final int index;
+  final AppUser? user;
+  final String propertyId;
+  final List<BoardColumn> allColumns;
+  final VoidCallback onTap;
+  final void Function(BoardCard card, int insertIndex) onDrop;
+  final bool isMobile;
+  final ColumnConfig columnConfig;
+
+  @override
+  State<_DndCard> createState() => _DndCardState();
+}
+
+class _DndCardState extends State<_DndCard> {
+  _DropEdge? _dropEdge;
+
+  @override
+  Widget build(BuildContext context) {
+    final card = widget.card;
+    final cardWidget = CardItemWidget(
+      card: card,
+      user: widget.user,
+      propertyId: widget.propertyId,
+      isMobile: widget.isMobile,
+      onTap: widget.onTap,
+      allColumns: widget.allColumns,
+      columnConfig: widget.columnConfig,
+    );
+    final feedbackWidth = widget.isMobile ? 300.0 : 230.0;
+    final feedback = Material(
+      elevation: 8,
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: feedbackWidth,
+        child: Opacity(
+          opacity: 0.9,
+          child: CardItemWidget(
+            card: card,
+            user: widget.user,
+            propertyId: widget.propertyId,
+            isMobile: widget.isMobile,
+            allColumns: widget.allColumns,
+            columnConfig: widget.columnConfig,
+          ),
+        ),
+      ),
+    );
+
+    // On mobile use LongPressDraggable (tap-friendly), on desktop use Draggable.
+    final draggableChild = widget.isMobile
+        ? LongPressDraggable<BoardCard>(
+            data: card,
+            feedback: feedback,
+            childWhenDragging: Opacity(opacity: 0.3, child: cardWidget),
+            child: cardWidget,
+          )
+        : MouseRegion(
+            cursor: SystemMouseCursors.grab,
+            child: Draggable<BoardCard>(
+              data: card,
+              feedback: feedback,
+              childWhenDragging: Opacity(opacity: 0.3, child: cardWidget),
+              child: cardWidget,
+            ),
+          );
+
+    // Single DragTarget covering the whole card. Edge (top/bottom) is computed
+    // from the cursor Y position vs the card's vertical midpoint in onMove, then
+    // stored in _dropEdge. onAcceptWithDetails reads _dropEdge to get the correct
+    // insertIndex. One target = one onAccept = no duplicate calls.
+    return DragTarget<BoardCard>(
+      onWillAcceptWithDetails: (d) => d.data.id != card.id,
+      onMove: (d) {
+        final box = context.findRenderObject() as RenderBox?;
+        if (box == null) return;
+        final mid = box.localToGlobal(Offset.zero).dy + box.size.height / 2;
+        final edge = d.offset.dy < mid ? _DropEdge.top : _DropEdge.bottom;
+        if (_dropEdge != edge) setState(() => _dropEdge = edge);
+      },
+      // Do NOT reset _dropEdge on leave — the value must survive until
+      // onAcceptWithDetails fires. The indicator hides because candidates
+      // becomes empty, but the edge is preserved for the accept callback.
+      onLeave: (_) => setState(() {}),
+      onAcceptWithDetails: (d) {
+        final insertIndex =
+            (_dropEdge ?? _DropEdge.bottom) == _DropEdge.top
+                ? widget.index
+                : widget.index + 1;
+        widget.onDrop(d.data, insertIndex);
+        setState(() => _dropEdge = null);
+      },
+      builder: (_, candidates, __) {
+        final isOver = candidates.isNotEmpty;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 80),
+                height: isOver && _dropEdge == _DropEdge.top ? 4 : 0,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2563EB),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              draggableChild,
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 80),
+                height: isOver && _dropEdge == _DropEdge.bottom ? 4 : 0,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2563EB),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// Trailing drop zone after the last card (or for empty columns)
+class _TrailingDropZone extends StatefulWidget {
+  const _TrailingDropZone({required this.onAccept});
+  final void Function(BoardCard) onAccept;
+
+  @override
+  State<_TrailingDropZone> createState() => _TrailingDropZoneState();
+}
+
+class _TrailingDropZoneState extends State<_TrailingDropZone> {
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<BoardCard>(
+      onWillAcceptWithDetails: (_) => true,
+      onAcceptWithDetails: (d) => widget.onAccept(d.data),
+      // Always at least 56px so the user doesn't have to scroll to the very
+      // bottom of the list to drop at the last position.
+      builder: (_, candidates, __) => AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        height: candidates.isNotEmpty ? 64 : 56,
+        decoration: BoxDecoration(
+          color: candidates.isNotEmpty
+              ? const Color(0xFF2563EB).withValues(alpha: 0.15)
+              : null,
+          borderRadius: BorderRadius.circular(6),
+          border: candidates.isNotEmpty
+              ? Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.4), width: 1.5)
+              : null,
+        ),
+      ),
+    );
+  }
+}

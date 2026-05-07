@@ -1,11 +1,25 @@
+import 'dart:async';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../domain/domain.dart';
 import '../../permissions/policy.dart';
+import '../../data/remote/api_client.dart';
 import '../providers/repo_providers.dart';
 import '../providers/api_providers.dart';
 
 const _uuid = Uuid();
+
+/// Incremented whenever a board action completes. The audit page watches this
+/// to refresh its list automatically without a manual reload.
+final auditVersionProvider = StateProvider<int>((ref) => 0);
+
+/// Returns a human-readable message from any exception.
+/// For [ApiException] it shows the server message; for others the toString.
+String _errMsg(Object e) {
+  if (e is ApiException) return e.message;
+  return '$e';
+}
 
 // ══════════════════════════════════════════
 //  Toast
@@ -162,7 +176,7 @@ class UsersNotifier extends AsyncNotifier<List<AppUser>> {
           );
       await reload();
     } catch (e) {
-      ref.read(toastProvider.notifier).show('Error al crear usuario: $e');
+      ref.read(toastProvider.notifier).show('Error al crear usuario: ${_errMsg(e)}');
       rethrow;
     }
   }
@@ -184,7 +198,7 @@ class UsersNotifier extends AsyncNotifier<List<AppUser>> {
       await reload();
     } catch (e) {
       state = AsyncData(prev);
-      ref.read(toastProvider.notifier).show('Error al guardar usuario: $e');
+      ref.read(toastProvider.notifier).show('Error al guardar usuario: ${_errMsg(e)}');
       rethrow;
     }
   }
@@ -197,7 +211,7 @@ class UsersNotifier extends AsyncNotifier<List<AppUser>> {
       await reload();
     } catch (e) {
       state = AsyncData(prev);
-      ref.read(toastProvider.notifier).show('Error al eliminar: $e');
+      ref.read(toastProvider.notifier).show('Error al eliminar: ${_errMsg(e)}');
       rethrow;
     }
   }
@@ -247,7 +261,7 @@ class PropertiesNotifier extends AsyncNotifier<List<Property>> {
       await reload();
     } catch (e) {
       state = AsyncData(prev);
-      ref.read(toastProvider.notifier).show('Error: $e');
+      ref.read(toastProvider.notifier).show('Error: ${_errMsg(e)}');
       rethrow;
     }
   }
@@ -303,7 +317,7 @@ class FieldsNotifier extends AsyncNotifier<List<FieldDef>> {
       _invalidateBoards();
     } catch (e) {
       state = AsyncData(prev);
-      ref.read(toastProvider.notifier).show('Error al crear campo: $e');
+      ref.read(toastProvider.notifier).show('Error al crear campo: ${_errMsg(e)}');
       rethrow;
     }
   }
@@ -320,7 +334,7 @@ class FieldsNotifier extends AsyncNotifier<List<FieldDef>> {
       _invalidateBoards();
     } catch (e) {
       state = AsyncData(prev);
-      ref.read(toastProvider.notifier).show('Error al guardar: $e');
+      ref.read(toastProvider.notifier).show('Error al guardar: ${_errMsg(e)}');
       rethrow;
     }
   }
@@ -334,7 +348,7 @@ class FieldsNotifier extends AsyncNotifier<List<FieldDef>> {
       _invalidateBoards();
     } catch (e) {
       state = AsyncData(prev);
-      ref.read(toastProvider.notifier).show('Error al eliminar: $e');
+      ref.read(toastProvider.notifier).show('Error al eliminar: ${_errMsg(e)}');
       rethrow;
     }
   }
@@ -387,13 +401,38 @@ class BoardState {
       .fold(0, (sum, list) => sum + list.where((c) => c.isDone).length);
 }
 
-class BoardNotifier extends FamilyAsyncNotifier<BoardState, String> {
+class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
+    with WidgetsBindingObserver {
   String get propertyId => arg;
+  Timer? _timer;
 
   @override
   Future<BoardState> build(String arg) async {
     await ref.watch(currentUserProvider.future);
+    WidgetsBinding.instance.addObserver(this);
+    _startTimer();
+    ref.onDispose(() {
+      WidgetsBinding.instance.removeObserver(this);
+      _timer?.cancel();
+    });
     return _load();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    // Poll every 10 s so all devices see changes promptly
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _reload());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState s) {
+    if (s == AppLifecycleState.resumed) {
+      _reload(); // immediate refresh when foregrounded
+      _startTimer();
+    } else if (s == AppLifecycleState.paused ||
+        s == AppLifecycleState.detached) {
+      _timer?.cancel(); // stop polling when backgrounded
+    }
   }
 
   // ── Load from API ─────────────────────────────────
@@ -426,6 +465,8 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String> {
 
   Future<void> _reload() async {
     state = AsyncData(await _load());
+    // Notify audit page that something changed so it can auto-refresh.
+    ref.read(auditVersionProvider.notifier).update((v) => v + 1);
   }
 
   // ── Columns ───────────────────────────────────────
@@ -468,7 +509,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String> {
       await _reload();
     } catch (e) {
       if (prev != null) state = AsyncData(prev);
-      ref.read(toastProvider.notifier).show('Error: $e');
+      ref.read(toastProvider.notifier).show('Error: ${_errMsg(e)}');
     }
   }
 
@@ -501,13 +542,11 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String> {
     state = AsyncData(BoardState(columns: reordered, cardsByColumn: current.cardsByColumn));
     try {
       final api = ref.read(boardApiProvider);
-      for (var i = 0; i < cols.length; i++) {
-        await api.updateColumnPosition(cols[i].id, i);
-      }
+      await api.reorderColumns(propertyId, cols.map((c) => c.id).toList());
       await _reload();
     } catch (e) {
       state = AsyncData(current);
-      ref.read(toastProvider.notifier).show('Error al reordenar: $e');
+      ref.read(toastProvider.notifier).show('Error al reordenar: ${_errMsg(e)}');
     }
   }
 
@@ -595,7 +634,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String> {
       await _reload();
     } catch (e) {
       if (prev != null) state = AsyncData(prev);
-      ref.read(toastProvider.notifier).show('Error al guardar tarjeta: $e');
+      ref.read(toastProvider.notifier).show('Error al guardar tarjeta: ${_errMsg(e)}');
       rethrow;
     }
   }
@@ -629,7 +668,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String> {
       await _reload();
     } catch (e) {
       if (prev != null) state = AsyncData(prev);
-      ref.read(toastProvider.notifier).show('Error: $e');
+      ref.read(toastProvider.notifier).show('Error: ${_errMsg(e)}');
     }
   }
 
@@ -649,7 +688,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String> {
       await ref.read(boardApiProvider).reorderCards(columnId, list.map((c) => c.id).toList());
     } catch (e) {
       if (prev != null) state = AsyncData(prev);
-      ref.read(toastProvider.notifier).show('Error al reordenar: $e');
+      ref.read(toastProvider.notifier).show('Error al reordenar: ${_errMsg(e)}');
     }
   }
 
@@ -684,7 +723,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String> {
       await _reload();
     } catch (e) {
       if (prev != null) state = AsyncData(prev);
-      ref.read(toastProvider.notifier).show('Error al mover: $e');
+      ref.read(toastProvider.notifier).show('Error al mover: ${_errMsg(e)}');
     }
   }
 
@@ -701,10 +740,11 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String> {
     try {
       await ref.read(boardApiProvider).archiveCard(cardId);
       ref.read(toastProvider.notifier).show('Tarjeta archivada');
+      ref.invalidate(archiveProvider);
       await _reload();
     } catch (e) {
       if (prev != null) state = AsyncData(prev);
-      ref.read(toastProvider.notifier).show('Error al archivar: $e');
+      ref.read(toastProvider.notifier).show('Error al archivar: ${_errMsg(e)}');
       rethrow;
     }
   }
@@ -839,6 +879,7 @@ class CardDisplayPrefs {
     this.showPriority = true,
     this.showCheckin = true,
     this.showRoomCode = true,
+    this.showPriorityBorder = true,
   });
 
   final bool showDone;
@@ -847,6 +888,7 @@ class CardDisplayPrefs {
   final bool showPriority;
   final bool showCheckin;
   final bool showRoomCode;
+  final bool showPriorityBorder;
 
   CardDisplayPrefs copyWith({
     bool? showDone,
@@ -855,6 +897,7 @@ class CardDisplayPrefs {
     bool? showPriority,
     bool? showCheckin,
     bool? showRoomCode,
+    bool? showPriorityBorder,
   }) =>
       CardDisplayPrefs(
         showDone: showDone ?? this.showDone,
@@ -863,6 +906,7 @@ class CardDisplayPrefs {
         showPriority: showPriority ?? this.showPriority,
         showCheckin: showCheckin ?? this.showCheckin,
         showRoomCode: showRoomCode ?? this.showRoomCode,
+        showPriorityBorder: showPriorityBorder ?? this.showPriorityBorder,
       );
 }
 

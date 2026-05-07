@@ -9,6 +9,7 @@ type UserRole string
 
 const (
 	RoleAdmin       UserRole = "admin"
+	RoleOperator    UserRole = "operator"
 	RoleCleaning    UserRole = "cleaning"
 	RoleMaintenance UserRole = "maintenance"
 )
@@ -101,17 +102,24 @@ type Property struct {
 }
 
 type ColumnConfig struct {
-	ShowDescription    *bool    `json:"showDescription,omitempty"`
-	ShowCustomFields   *bool    `json:"showCustomFields,omitempty"`
-	ShowComments       *bool    `json:"showComments,omitempty"`
-	ShowAssign         *bool    `json:"showAssign,omitempty"`
-	ShowPriority       *bool    `json:"showPriority,omitempty"`
-	ShowCheckin        *bool    `json:"showCheckin,omitempty"`
-	CardChipFieldIDs   []string `json:"cardChipFieldIds,omitempty"`
-	ShowCardDescription *bool   `json:"showCardDescription,omitempty"`
-	ShowCardRoomCode   *bool    `json:"showCardRoomCode,omitempty"`
-	ShowCardFooter     *bool    `json:"showCardFooter,omitempty"`
-	ShowCardDoneStamp  *bool    `json:"showCardDoneStamp,omitempty"`
+	// Form-level toggles (shown in card detail sheet)
+	ShowDescription  *bool `json:"showDescription,omitempty"`
+	ShowCustomFields *bool `json:"showCustomFields,omitempty"`
+	ShowComments     *bool `json:"showComments,omitempty"`
+	ShowAssign       *bool `json:"showAssign,omitempty"`
+	ShowPriority     *bool `json:"showPriority,omitempty"`
+	ShowCheckin      *bool `json:"showCheckin,omitempty"`
+	// Card chip field IDs
+	CardChipFieldIDs []string `json:"cardChipFieldIds,omitempty"`
+	// Card compact-view toggles (persistent, formerly CardDisplayPrefs)
+	CardShowDone           *bool `json:"cardShowDone,omitempty"`
+	CardShowDescription    *bool `json:"cardShowDescription,omitempty"`
+	CardShowCleanedBy      *bool `json:"cardShowCleanedBy,omitempty"`
+	CardShowPriority       *bool `json:"cardShowPriority,omitempty"`
+	CardShowPriorityBorder *bool `json:"cardShowPriorityBorder,omitempty"`
+	CardShowCheckin        *bool `json:"cardShowCheckin,omitempty"`
+	CardShowRoomCode       *bool `json:"cardShowRoomCode,omitempty"`
+	CardShowImage          *bool `json:"cardShowImage,omitempty"`
 }
 
 type BoardColumn struct {
@@ -145,6 +153,8 @@ type Card struct {
 	CustomFields map[string]any         `json:"customFields" db:"-"`
 	CreatedAt    time.Time              `json:"createdAt" db:"created_at"`
 	UpdatedAt    time.Time              `json:"updatedAt" db:"updated_at"`
+	CleanedBy    string                 `json:"cleanedBy" db:"cleaned_by"`
+	DoneAt       *time.Time             `json:"doneAt,omitempty" db:"done_at"`
 }
 
 type FieldDef struct {
@@ -181,4 +191,16 @@ type ArchiveItem struct {
 	Kind       ArchiveKind    `json:"kind" db:"kind"`
 	Payload    map[string]any `json:"payload" db:"-"`
 	ArchivedAt time.Time      `json:"archivedAt" db:"archived_at"`
+}
+
+// AuditEvent records a mutation performed by a user.
+type AuditEvent struct {
+	ID        string    `json:"id" db:"id"`
+	ActorID   string    `json:"actorId" db:"actor_id"`
+	ActorName string    `json:"actorName" db:"actor_name"`
+	Action    string    `json:"action" db:"action"`
+	Entity    string    `json:"entity" db:"entity"`
+	EntityID  string    `json:"entityId" db:"entity_id"`
+	Detail    string    `json:"detail,omitempty" db:"detail"`
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 }

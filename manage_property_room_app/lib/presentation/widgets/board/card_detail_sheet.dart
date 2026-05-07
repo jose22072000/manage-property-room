@@ -12,6 +12,7 @@ import '../../../core/property_visuals.dart';
 import '../../../core/responsive.dart';
 import '../../../domain/domain.dart';
 import '../../../permissions/policy.dart';
+import '../shared/confirm_dialog.dart';
 
 // ─────────────────────────────────────────
 //  Entry point — wraps in ProviderScope consumer
@@ -259,25 +260,42 @@ class _CardDetailSheetState extends ConsumerState<CardDetailSheet> {
               ),
             ),
           if (config.showCustomFields)
-            SliverList.builder(
-              itemCount: fields.where((f) => f.enabled && f.showOnCard).length,
-              itemBuilder: (_, i) {
-                final field = fields.where((f) => f.enabled && f.showOnCard).elementAt(i);
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                  child: _CustomFieldRow(
-                    field: field,
-                    value: _card.customFields[field.id],
-                    canEdit: _can(CardAction.editCustomField),
-                    cardId: _card.id,
-                    onChanged: (v) {
-                      final updated = Map<String, dynamic>.from(_card.customFields);
-                      updated[field.id] = v;
-                      _save(_card.copyWith(customFields: updated));
-                    },
-                  ),
-                );
-              },
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final visible = fields.where((f) => f.enabled && f.showOnCard).toList();
+                    if (visible.isEmpty) return const SizedBox.shrink();
+                    final maxW = constraints.maxWidth;
+                    // Two-column grid when wide enough, otherwise single column.
+                    final twoCol = maxW >= 520;
+                    final tileWidth = twoCol ? (maxW - 12) / 2 : maxW;
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      children: visible.map((field) {
+                        // Image fields & long text take full width
+                        final fullWidth = field.type == FieldType.image;
+                        return SizedBox(
+                          width: fullWidth ? maxW : tileWidth,
+                          child: _CustomFieldRow(
+                            field: field,
+                            value: _card.customFields[field.id],
+                            canEdit: _can(CardAction.editCustomField),
+                            cardId: _card.id,
+                            onChanged: (v) {
+                              final updated = Map<String, dynamic>.from(_card.customFields);
+                              updated[field.id] = v;
+                              _save(_card.copyWith(customFields: updated));
+                            },
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+              ),
             ),
 
           // Comments
@@ -327,22 +345,14 @@ class _CardDetailSheetState extends ConsumerState<CardDetailSheet> {
   }
 
   Future<void> _archiveCard() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('¿Archivar tarjeta?'),
-        content: const Text('La tarjeta se moverá al archivo.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Archivar'),
-          ),
-        ],
-      ),
+    final confirmed = await ConfirmDialog.ask(
+      context,
+      message: '¿Archivar tarjeta?',
+      description: 'La tarjeta se moverá al archivo.',
+      confirmLabel: 'Archivar',
+      danger: true,
     );
-    if (confirmed == true && mounted) {
+    if (confirmed && mounted) {
       try {
         await ref.read(boardProvider(widget.propertyId).notifier).archiveCard(_card.id);
         if (mounted) Navigator.pop(context);
@@ -752,68 +762,75 @@ class _CustomFieldRowState extends State<_CustomFieldRow> {
   }
 
   Widget _buildText() {
-    return Row(
-      children: [
-        SizedBox(
-          width: 100,
-          child: Text(widget.field.label,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
-        ),
-        Expanded(
-          child: widget.canEdit
-              ? TextField(
-                  controller: _ctrl,
-                  style: const TextStyle(fontSize: 13),
-                  decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6, horizontal: 8)),
-                  onChanged: (v) => Future.delayed(const Duration(milliseconds: 600), () {
-                    if (_ctrl.text == v) widget.onChanged(v);
-                  }),
-                )
-              : Text(widget.value?.toString() ?? '—', style: const TextStyle(fontSize: 13)),
-        ),
-      ],
+    return _LabeledTile(
+      label: widget.field.label,
+      child: widget.canEdit
+          ? TextField(
+              controller: _ctrl,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                isDense: true,
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+              ),
+              onChanged: (v) => Future.delayed(const Duration(milliseconds: 600), () {
+                if (_ctrl.text == v) widget.onChanged(v);
+              }),
+            )
+          : Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(widget.value?.toString().isNotEmpty == true ? widget.value.toString() : '—',
+                  style: const TextStyle(fontSize: 13)),
+            ),
     );
   }
 
   Widget _buildSelect() {
     final current = widget.value?.toString();
     final displayValue = (current != null && widget.field.options.contains(current)) ? current : null;
-    return Row(
-      children: [
-        SizedBox(
-          width: 100,
-          child: Text(widget.field.label,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
-        ),
-        Expanded(
-          child: InkWell(
-            onTap: widget.canEdit ? () => _showSelectPicker(context) : null,
-            borderRadius: BorderRadius.circular(6),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      displayValue ?? '—',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: displayValue == null ? const Color(0xFF94A3B8) : null,
-                      ),
-                    ),
+    return _LabeledTile(
+      label: widget.field.label,
+      child: InkWell(
+        onTap: widget.canEdit ? () => _showSelectPicker(context) : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  displayValue ?? '—',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: displayValue == null ? const Color(0xFF94A3B8) : null,
                   ),
-                  if (widget.canEdit)
-                    const Icon(Icons.expand_more, size: 16, color: Color(0xFF94A3B8)),
-                ],
+                ),
               ),
-            ),
+              if (widget.canEdit)
+                const Icon(Icons.expand_more, size: 16, color: Color(0xFF94A3B8)),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 
@@ -855,15 +872,40 @@ class _CustomFieldRowState extends State<_CustomFieldRow> {
 
   Widget _buildCheckbox() {
     final checked = widget.value == true || widget.value == 'true';
-    return Row(
-      children: [
-        Checkbox(
-          value: checked,
-          onChanged: widget.canEdit ? (v) => widget.onChanged(v) : null,
+    return InkWell(
+      onTap: widget.canEdit ? () => widget.onChanged(!checked) : null,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: checked ? const Color(0xFFEFF6FF) : Colors.white,
+          border: Border.all(color: checked ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0)),
+          borderRadius: BorderRadius.circular(8),
         ),
-        const SizedBox(width: 4),
-        Text(widget.field.label, style: const TextStyle(fontSize: 13)),
-      ],
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: Checkbox(
+                value: checked,
+                onChanged: widget.canEdit ? (v) => widget.onChanged(v) : null,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(widget.field.label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: checked ? const Color(0xFF1D4ED8) : const Color(0xFF334155),
+                  )),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1231,6 +1273,38 @@ class _SectionLabel extends StatelessWidget {
           label,
           style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF374151)),
         ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────
+//  Labeled tile (label above input) — for custom field grid cells
+// ─────────────────────────────────────────
+
+class _LabeledTile extends StatelessWidget {
+  const _LabeledTile({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF475569),
+            letterSpacing: 0.2,
+          ),
+        ),
+        const SizedBox(height: 4),
+        child,
       ],
     );
   }

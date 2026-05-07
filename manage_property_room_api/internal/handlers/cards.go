@@ -42,6 +42,9 @@ type updateCardRequest struct {
 	ClearAssign  bool                    `json:"clearAssign,omitempty"`
 	Kind         *domain.CardKind        `json:"kind,omitempty"`
 	CustomFields *map[string]any         `json:"customFields,omitempty"`
+	CleanedBy    *string                 `json:"cleanedBy,omitempty"`
+	DoneAt       *time.Time              `json:"doneAt,omitempty"`
+	ClearDoneAt  bool                    `json:"clearDoneAt,omitempty"`
 }
 
 func (h *CardsHandler) CreateForColumn(w http.ResponseWriter, r *http.Request) {
@@ -69,6 +72,7 @@ func (h *CardsHandler) CreateForColumn(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Cards().Create(r.Context(), c); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "create", "card", c.ID, c.Title)
 	httpx.WriteJSON(w, http.StatusCreated, c)
 }
 
@@ -98,9 +102,12 @@ func (h *CardsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.ClearAssign { c.AssignedToID = nil } else if req.AssignedToID != nil { c.AssignedToID = req.AssignedToID }
 	if req.Kind != nil { c.Kind = *req.Kind }
 	if req.CustomFields != nil { c.CustomFields = *req.CustomFields }
+	if req.CleanedBy != nil { c.CleanedBy = *req.CleanedBy }
+	if req.ClearDoneAt { c.DoneAt = nil } else if req.DoneAt != nil { c.DoneAt = req.DoneAt }
 	if err := h.Store.Cards().Update(r.Context(), c); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "update", "card", c.ID, c.Title)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -109,6 +116,7 @@ func (h *CardsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Cards().Delete(r.Context(), id); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "delete", "card", id, "")
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -128,6 +136,7 @@ func (h *CardsHandler) Move(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := h.Store.Cards().GetByID(r.Context(), id)
 	if err != nil { httpx.HandleError(w, err); return }
+	recordAudit(r.Context(), h.Store, "move", "card", id, c.Title)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -139,6 +148,9 @@ func (h *CardsHandler) ToggleDone(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Cards().Update(r.Context(), c); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	status := "pendiente"
+	if c.IsDone { status = "completada" }
+	recordAudit(r.Context(), h.Store, "update", "card", c.ID, c.Title+" → "+status)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -149,6 +161,7 @@ func (h *CardsHandler) Archive(w http.ResponseWriter, r *http.Request) {
 	if err := archiveCard(r, h.Store, c); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "archive", "card", c.ID, c.Title)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -169,4 +182,23 @@ func (h *CardsHandler) Assign(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	httpx.WriteJSON(w, http.StatusOK, c)
+}
+
+type reorderCardsRequest struct {
+	ColumnID string   `json:"columnId"`
+	IDs      []string `json:"ids"`
+}
+
+func (h *CardsHandler) Reorder(w http.ResponseWriter, r *http.Request) {
+	var req reorderCardsRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error()); return
+	}
+	if req.ColumnID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "columnId required"); return
+	}
+	if err := h.Store.Cards().Reorder(r.Context(), req.ColumnID, req.IDs); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

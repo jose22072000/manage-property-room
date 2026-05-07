@@ -71,6 +71,7 @@ func (h *UsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Users().Create(r.Context(), u); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "create", "user", u.ID, u.Name)
 	httpx.WriteJSON(w, http.StatusCreated, u)
 }
 
@@ -90,14 +91,19 @@ func (h *UsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Users().Update(r.Context(), u); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "update", "user", u.ID, u.Name)
 	httpx.WriteJSON(w, http.StatusOK, u)
 }
 
 func (h *UsersHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	u, _ := h.Store.Users().GetByID(r.Context(), id)
 	if err := h.Store.Users().Delete(r.Context(), id); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	name := id
+	if u != nil { name = u.Name }
+	recordAudit(r.Context(), h.Store, "delete", "user", id, name)
 	w.WriteHeader(http.StatusNoContent)
 }
 

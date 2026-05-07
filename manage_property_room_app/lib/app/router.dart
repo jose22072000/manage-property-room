@@ -8,6 +8,7 @@ import '../presentation/pages/properties_page.dart';
 import '../presentation/pages/board_page.dart';
 import '../presentation/pages/todo_page.dart';
 import '../presentation/pages/archive_page.dart';
+import '../presentation/pages/audit_page.dart';
 import '../presentation/pages/settings_page.dart';
 import '../presentation/pages/users_page.dart';
 import '../presentation/pages/api_debug_page.dart';
@@ -19,7 +20,15 @@ final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
 class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(WidgetRef ref) {
-    ref.listen(currentUserProvider, (prev, next) => notifyListeners());
+    _sub = ref.listenManual(currentUserProvider, (prev, next) => notifyListeners());
+  }
+
+  ProviderSubscription<AsyncValue<AppUser?>>? _sub;
+
+  @override
+  void dispose() {
+    _sub?.close();
+    super.dispose();
   }
 }
 
@@ -42,7 +51,8 @@ GoRouter buildRouter(WidgetRef ref) {
       // Admin-only pages
       if (user != null) {
         final isAdminOnly = state.matchedLocation.startsWith('/settings') ||
-            state.matchedLocation.startsWith('/users');
+            state.matchedLocation.startsWith('/users') ||
+            state.matchedLocation.startsWith('/audit');
         if (isAdminOnly && !Policy.canBoard(user, BoardAction.manageUsers)) {
           return '/';
         }
@@ -73,6 +83,10 @@ GoRouter buildRouter(WidgetRef ref) {
           GoRoute(
             path: '/archive',
             pageBuilder: (_, state) => const NoTransitionPage(child: ArchivePage()),
+          ),
+          GoRoute(
+            path: '/audit',
+            pageBuilder: (_, state) => const NoTransitionPage(child: AuditPage()),
           ),
           GoRoute(
             path: '/settings',

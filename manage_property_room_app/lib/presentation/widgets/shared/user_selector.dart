@@ -121,6 +121,8 @@ Color _roleColor(UserRole role) {
   switch (role) {
     case UserRole.admin:
       return const Color(0xFF2563EB);
+    case UserRole.operator:
+      return const Color(0xFF7C3AED);
     case UserRole.cleaning:
       return const Color(0xFF10B981);
     case UserRole.maintenance:
@@ -132,6 +134,8 @@ String _roleLabel(UserRole role) {
   switch (role) {
     case UserRole.admin:
       return 'Administrador';
+    case UserRole.operator:
+      return 'Operador';
     case UserRole.cleaning:
       return 'Limpieza';
     case UserRole.maintenance:

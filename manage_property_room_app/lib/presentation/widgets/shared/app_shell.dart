@@ -121,6 +121,7 @@ class _NavLinks extends StatelessWidget {
       const _NavLinkDef('Archivo', '/archive'),
       const _NavLinkDef('Configuracion', '/settings'),
       if (canAdmin) const _NavLinkDef('Usuarios', '/users'),
+      if (canAdmin) const _NavLinkDef('Auditoría', '/audit'),
     ];
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -175,6 +176,7 @@ class _BottomNav extends StatelessWidget {
       const _BNavItem('Archivo', Icons.archive_outlined, Icons.archive, '/archive'),
       const _BNavItem('Ajustes', Icons.settings_outlined, Icons.settings, '/settings'),
       if (canAdmin) const _BNavItem('Usuarios', Icons.group_outlined, Icons.group, '/users'),
+      if (canAdmin) const _BNavItem('Auditoría', Icons.history_outlined, Icons.history, '/audit'),
     ];
     int idx = items.indexWhere((i) => i.route == location);
     if (idx < 0) idx = 0;

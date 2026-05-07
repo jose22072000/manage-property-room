@@ -5,10 +5,13 @@ import 'package:uuid/uuid.dart';
 import '../../application/notifiers/notifiers.dart';
 import '../../core/property_visuals.dart';
 import '../../core/responsive.dart';
+import '../../data/remote/api_client.dart';
 import '../../domain/domain.dart';
 import '../widgets/shared/confirm_dialog.dart';
 
 const _uuid = Uuid();
+
+String _errMsg(Object e) => e is ApiException ? e.message : '$e';
 
 /// Página de configuración — paridad visual con `src/pages/SettingsPage.tsx`.
 ///
@@ -36,15 +39,13 @@ class SettingsPage extends ConsumerWidget {
                 const _Header(),
                 const SizedBox(height: 24),
                 if (isWide)
-                  IntrinsicHeight(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Expanded(child: _FieldsSection()),
-                        SizedBox(width: 24),
-                        Expanded(child: _ColumnsSection()),
-                      ],
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Expanded(child: _FieldsSection()),
+                      SizedBox(width: 24),
+                      Expanded(child: _ColumnsSection()),
+                    ],
                   )
                 else
                   const Column(
@@ -114,7 +115,7 @@ class _FieldsSection extends ConsumerWidget {
     final fieldsAsync = ref.watch(fieldsProvider);
     return fieldsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Text('Error: $e'),
+      error: (e, _) => Text('Error: ${_errMsg(e)}'),
       data: (fields) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -656,7 +657,7 @@ class _ColumnsSectionState extends ConsumerState<_ColumnsSection> {
     final propsAsync = ref.watch(propertiesProvider);
     return propsAsync.when(
       loading: () => const SizedBox.shrink(),
-      error: (e, _) => Text('Error: $e'),
+      error: (e, _) => Text('Error: ${_errMsg(e)}'),
       data: (properties) {
         final activeId = _activePropId ??
             (properties.isNotEmpty ? properties.first.id : null);
@@ -750,7 +751,7 @@ class _ColumnsForProperty extends ConsumerWidget {
     final boardAsync = ref.watch(boardProvider(propertyId));
     return boardAsync.when(
       loading: () => const SizedBox.shrink(),
-      error: (e, _) => Text('Error: $e'),
+      error: (e, _) => Text('Error: ${_errMsg(e)}'),
       data: (board) {
         final cols = [...board.columns]
           ..sort((a, b) => a.position.compareTo(b.position));
@@ -800,15 +801,13 @@ class _ColumnConfigRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cfg = column.config;
     final notifier = ref.read(boardProvider(column.propertyId).notifier);
-    final cardPrefs = ref.watch(cardDisplayPrefsProvider(column.id));
+    final cardPrefs = cfg;
 
     void setCfg(ColumnConfig next) {
       notifier.updateColumnConfig(column.id, next);
     }
 
-    void setCardPrefs(CardDisplayPrefs next) {
-      ref.read(cardDisplayPrefsProvider(column.id).notifier).state = next;
-    }
+    void setCardPrefs(ColumnConfig next) => setCfg(next);
 
     return Container(
       decoration: BoxDecoration(
@@ -909,33 +908,43 @@ class _ColumnConfigRow extends ConsumerWidget {
                     _ConfigItem(
                         'Check completado',
                         Icons.check_circle_outline,
-                        cardPrefs.showDone,
-                        (v) => setCardPrefs(cardPrefs.copyWith(showDone: v))),
+                        cardPrefs.cardShowDone,
+                        (v) => setCardPrefs(cardPrefs.copyWith(cardShowDone: v))),
                     _ConfigItem(
                         'Descripci\u00f3n',
                         Icons.notes_outlined,
-                        cardPrefs.showDescription,
-                        (v) => setCardPrefs(cardPrefs.copyWith(showDescription: v))),
+                        cardPrefs.cardShowDescription,
+                        (v) => setCardPrefs(cardPrefs.copyWith(cardShowDescription: v))),
                     _ConfigItem(
-                        'Qui\u00e9n complet\u00f3',
+                        'Quién completó',
                         Icons.how_to_reg_outlined,
-                        cardPrefs.showCleanedBy,
-                        (v) => setCardPrefs(cardPrefs.copyWith(showCleanedBy: v))),
+                        cardPrefs.cardShowCleanedBy,
+                        (v) => setCardPrefs(cardPrefs.copyWith(cardShowCleanedBy: v))),
                     _ConfigItem(
                         'Prioridad',
                         Icons.flag_outlined,
-                        cardPrefs.showPriority,
-                        (v) => setCardPrefs(cardPrefs.copyWith(showPriority: v))),
+                        cardPrefs.cardShowPriority,
+                        (v) => setCardPrefs(cardPrefs.copyWith(cardShowPriority: v))),
+                    _ConfigItem(
+                        'Borde de prioridad',
+                        Icons.border_color_outlined,
+                        cardPrefs.cardShowPriorityBorder,
+                        (v) => setCardPrefs(cardPrefs.copyWith(cardShowPriorityBorder: v))),
                     _ConfigItem(
                         'Fecha de checkin',
                         Icons.login_outlined,
-                        cardPrefs.showCheckin,
-                        (v) => setCardPrefs(cardPrefs.copyWith(showCheckin: v))),
+                        cardPrefs.cardShowCheckin,
+                        (v) => setCardPrefs(cardPrefs.copyWith(cardShowCheckin: v))),
                     _ConfigItem(
-                        'C\u00f3digo habitaci\u00f3n',
+                        'Código habitación',
                         Icons.meeting_room_outlined,
-                        cardPrefs.showRoomCode,
-                        (v) => setCardPrefs(cardPrefs.copyWith(showRoomCode: v))),
+                        cardPrefs.cardShowRoomCode,
+                        (v) => setCardPrefs(cardPrefs.copyWith(cardShowRoomCode: v))),
+                    _ConfigItem(
+                        'Miniatura de imagen',
+                        Icons.image_outlined,
+                        cardPrefs.cardShowImage,
+                        (v) => setCardPrefs(cardPrefs.copyWith(cardShowImage: v))),
                   ]),
                 ],
               ),

@@ -55,6 +55,7 @@ func (h *ColumnsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Columns().Create(r.Context(), c); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "create", "column", c.ID, c.Title)
 	httpx.WriteJSON(w, http.StatusCreated, c)
 }
 
@@ -76,14 +77,18 @@ func (h *ColumnsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Columns().Update(r.Context(), c); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "update", "column", c.ID, c.Title)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
 func (h *ColumnsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	col, err := h.Store.Columns().GetByID(r.Context(), id)
+	if err != nil { httpx.HandleError(w, err); return }
 	if err := h.Store.Columns().Delete(r.Context(), id); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "delete", "column", id, col.Title)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -154,6 +159,7 @@ func (h *ColumnsHandler) Move(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Columns().Update(r.Context(), c); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "move", "column", c.ID, c.Title)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -215,7 +221,28 @@ func (h *ColumnsHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Columns().Update(r.Context(), c); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "config", "column", c.ID, c.Title)
 	httpx.WriteJSON(w, http.StatusOK, c)
+}
+
+type reorderColumnsRequest struct {
+	PropertyID string   `json:"propertyId"`
+	IDs        []string `json:"ids"`
+}
+
+func (h *ColumnsHandler) Reorder(w http.ResponseWriter, r *http.Request) {
+	var req reorderColumnsRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error()); return
+	}
+	if req.PropertyID == "" || len(req.IDs) == 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "propertyId and ids required"); return
+	}
+	if err := h.Store.Columns().Reorder(r.Context(), req.PropertyID, req.IDs); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	recordAudit(r.Context(), h.Store, "reorder", "column", req.PropertyID, "")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // archiveCard is reused by ColumnsHandler and CardsHandler.

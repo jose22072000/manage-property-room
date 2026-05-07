@@ -395,6 +395,8 @@ type cardRow struct {
 	CustomFieldsJSON string         `db:"custom_fields_json"`
 	CreatedAt        string         `db:"created_at"`
 	UpdatedAt        string         `db:"updated_at"`
+	CleanedBy        string         `db:"cleaned_by"`
+	DoneAt           sql.NullString `db:"done_at"`
 }
 
 func (r cardRow) toDomain() (*domain.Card, error) {
@@ -407,6 +409,7 @@ func (r cardRow) toDomain() (*domain.Card, error) {
 		RoomCode: r.RoomCode, Priority: domain.CardPriority(r.Priority),
 		Kind: domain.CardKind(r.Kind),
 		CreatedAt: created, UpdatedAt: updated,
+		CleanedBy: r.CleanedBy,
 	}
 	if r.CheckinDate.Valid && r.CheckinDate.String != "" {
 		t, _ := time.Parse(time.RFC3339Nano, r.CheckinDate.String)
@@ -415,6 +418,10 @@ func (r cardRow) toDomain() (*domain.Card, error) {
 	if r.AssignedToID.Valid && r.AssignedToID.String != "" {
 		s := r.AssignedToID.String
 		c.AssignedToID = &s
+	}
+	if r.DoneAt.Valid && r.DoneAt.String != "" {
+		t, _ := time.Parse(time.RFC3339Nano, r.DoneAt.String)
+		c.DoneAt = &t
 	}
 	if r.CustomFieldsJSON != "" {
 		if err := json.Unmarshal([]byte(r.CustomFieldsJSON), &c.CustomFields); err != nil {
@@ -431,16 +438,18 @@ func (r *cardRepo) Create(ctx context.Context, c *domain.Card) error {
 	c.UpdatedAt = nowUTC()
 	if c.CustomFields == nil { c.CustomFields = map[string]any{} }
 	customJSON, _ := marshalJSON(c.CustomFields)
-	var checkin, assigned sql.NullString
+	var checkin, assigned, doneAt sql.NullString
 	if c.CheckinDate != nil { checkin = sql.NullString{String: c.CheckinDate.Format(time.RFC3339Nano), Valid: true} }
 	if c.AssignedToID != nil { assigned = sql.NullString{String: *c.AssignedToID, Valid: true} }
+	if c.DoneAt != nil { doneAt = sql.NullString{String: c.DoneAt.Format(time.RFC3339Nano), Valid: true} }
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO cards(id,property_id,column_id,title,description,position,is_done,archived,room_code,priority,checkin_date,assigned_to_id,kind,custom_fields_json,created_at,updated_at)
-		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		`INSERT INTO cards(id,property_id,column_id,title,description,position,is_done,archived,room_code,priority,checkin_date,assigned_to_id,kind,custom_fields_json,created_at,updated_at,cleaned_by,done_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		c.ID, c.PropertyID, c.ColumnID, c.Title, c.Description, c.Position,
 		boolToInt(c.IsDone), boolToInt(c.Archived), c.RoomCode, string(c.Priority),
 		checkin, assigned, string(c.Kind), customJSON,
-		c.CreatedAt.Format(time.RFC3339Nano), c.UpdatedAt.Format(time.RFC3339Nano))
+		c.CreatedAt.Format(time.RFC3339Nano), c.UpdatedAt.Format(time.RFC3339Nano),
+		c.CleanedBy, doneAt)
 	return err
 }
 
@@ -484,15 +493,16 @@ func (r *cardRepo) Update(ctx context.Context, c *domain.Card) error {
 	c.UpdatedAt = nowUTC()
 	if c.CustomFields == nil { c.CustomFields = map[string]any{} }
 	customJSON, _ := marshalJSON(c.CustomFields)
-	var checkin, assigned sql.NullString
+	var checkin, assigned, doneAt sql.NullString
 	if c.CheckinDate != nil { checkin = sql.NullString{String: c.CheckinDate.Format(time.RFC3339Nano), Valid: true} }
 	if c.AssignedToID != nil { assigned = sql.NullString{String: *c.AssignedToID, Valid: true} }
+	if c.DoneAt != nil { doneAt = sql.NullString{String: c.DoneAt.Format(time.RFC3339Nano), Valid: true} }
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE cards SET column_id=?,title=?,description=?,position=?,is_done=?,archived=?,room_code=?,priority=?,checkin_date=?,assigned_to_id=?,kind=?,custom_fields_json=?,updated_at=? WHERE id=?`,
+		`UPDATE cards SET column_id=?,title=?,description=?,position=?,is_done=?,archived=?,room_code=?,priority=?,checkin_date=?,assigned_to_id=?,kind=?,custom_fields_json=?,updated_at=?,cleaned_by=?,done_at=? WHERE id=?`,
 		c.ColumnID, c.Title, c.Description, c.Position,
 		boolToInt(c.IsDone), boolToInt(c.Archived), c.RoomCode, string(c.Priority),
 		checkin, assigned, string(c.Kind), customJSON,
-		c.UpdatedAt.Format(time.RFC3339Nano), c.ID)
+		c.UpdatedAt.Format(time.RFC3339Nano), c.CleanedBy, doneAt, c.ID)
 	if err != nil { return err }
 	if n, _ := res.RowsAffected(); n == 0 { return store.ErrNotFound }
 	return nil
@@ -506,12 +516,70 @@ func (r *cardRepo) Delete(ctx context.Context, id string) error {
 }
 
 func (r *cardRepo) MoveToColumn(ctx context.Context, cardID, targetColumnID string, position int) error {
-	res, err := r.db.ExecContext(ctx,
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil { return err }
+	defer tx.Rollback() //nolint:errcheck
+
+	// Determine the card's current column so we can compact it after the move.
+	var sourceColID string
+	if err := tx.QueryRowContext(ctx, `SELECT column_id FROM cards WHERE id=?`, cardID).Scan(&sourceColID); err != nil {
+		return wrapNotFound(err)
+	}
+
+	// Shift destination cards down to make space at the target position.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE cards SET position = position + 1 WHERE column_id = ? AND position >= ? AND archived = 0 AND id != ?`,
+		targetColumnID, position, cardID); err != nil {
+		return err
+	}
+
+	// Move the card.
+	now := nowUTC().Format(time.RFC3339Nano)
+	res, err := tx.ExecContext(ctx,
 		`UPDATE cards SET column_id=?, position=?, updated_at=? WHERE id=?`,
-		targetColumnID, position, nowUTC().Format(time.RFC3339Nano), cardID)
+		targetColumnID, position, now, cardID)
 	if err != nil { return err }
 	if n, _ := res.RowsAffected(); n == 0 { return store.ErrNotFound }
+
+	// Compact source column (fill gap left by the moved card).
+	if sourceColID != targetColumnID {
+		if err := compactColumnPositions(ctx, tx, sourceColID); err != nil { return err }
+	}
+	// Compact destination column (normalize any accumulated position drift).
+	if err := compactColumnPositions(ctx, tx, targetColumnID); err != nil { return err }
+
+	return tx.Commit()
+}
+
+// compactColumnPositions rewrites positions 0,1,2,… in order for active cards in a column.
+func compactColumnPositions(ctx context.Context, tx *sqlx.Tx, columnID string) error {
+	var ids []string
+	if err := tx.SelectContext(ctx, &ids,
+		`SELECT id FROM cards WHERE column_id=? AND archived=0 ORDER BY position, created_at`, columnID); err != nil {
+		return err
+	}
+	for i, id := range ids {
+		if _, err := tx.ExecContext(ctx, `UPDATE cards SET position=? WHERE id=?`, i, id); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (r *cardRepo) Reorder(ctx context.Context, columnID string, orderedIDs []string) error {
+	if len(orderedIDs) == 0 { return nil }
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil { return err }
+	now := nowUTC().Format(time.RFC3339Nano)
+	for i, id := range orderedIDs {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE cards SET position=?, updated_at=? WHERE id=? AND column_id=?`,
+			i, now, id, columnID); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // ── fields ───────────────────────────────────────────────────────────────────
@@ -769,4 +837,39 @@ func (r *archiveRepo) Delete(ctx context.Context, id string) error {
 func nullStr(s string) sql.NullString {
 	if s == "" { return sql.NullString{} }
 	return sql.NullString{String: s, Valid: true}
+}
+
+// ─────────────────────────────────────────
+//  auditRepo
+// ─────────────────────────────────────────
+
+type auditRepo struct{ db *sqlx.DB }
+
+func (r *auditRepo) Create(ctx context.Context, e *domain.AuditEvent) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO audit_events(id,actor_id,actor_name,action,entity,entity_id,detail,created_at)
+		 VALUES(?,?,?,?,?,?,?,?)`,
+		e.ID, e.ActorID, e.ActorName, e.Action, e.Entity, e.EntityID, e.Detail,
+		e.CreatedAt.UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func (r *auditRepo) List(ctx context.Context, limit int) ([]domain.AuditEvent, error) {
+	if limit <= 0 { limit = 200 }
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id,actor_id,actor_name,action,entity,entity_id,detail,created_at
+		 FROM audit_events ORDER BY created_at DESC LIMIT ?`, limit)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	out := make([]domain.AuditEvent, 0)
+	for rows.Next() {
+		var e domain.AuditEvent
+		var ts string
+		if err := rows.Scan(&e.ID, &e.ActorID, &e.ActorName, &e.Action, &e.Entity, &e.EntityID, &e.Detail, &ts); err != nil {
+			return nil, err
+		}
+		if t, err := time.Parse(time.RFC3339Nano, ts); err == nil { e.CreatedAt = t }
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }

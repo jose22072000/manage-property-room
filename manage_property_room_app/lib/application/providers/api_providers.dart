@@ -8,6 +8,7 @@ import '../../data/remote/properties_api.dart';
 import '../../data/remote/users_api.dart';
 import '../../data/remote/fields_api.dart';
 import '../../data/remote/archive_api.dart';
+import '../../data/remote/audit_api.dart';
 
 /// Currently configured backend URL. UI may override via Settings → Avanzado.
 final apiBaseUrlProvider = StateProvider<String>(
@@ -44,6 +45,10 @@ final fieldsApiProvider = Provider<FieldsApi>(
 
 final archiveApiProvider = Provider<ArchiveApi>(
   (ref) => ArchiveApi(ref.watch(apiClientProvider)),
+);
+
+final auditApiProvider = Provider<AuditApi>(
+  (ref) => AuditApi(ref.watch(apiClientProvider)),
 );
 
 /// Reactive snapshot of the current backend connectivity.

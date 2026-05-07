@@ -48,6 +48,11 @@ class BoardApi {
       _client.patch<Map<String, dynamic>>('/columns/$columnId',
           body: {'position': position});
 
+  /// POST /columns/reorder — bulk reorder columns by ordered IDs
+  Future<void> reorderColumns(String propertyId, List<String> orderedIds) =>
+      _client.post<dynamic>('/columns/reorder',
+          body: {'propertyId': propertyId, 'ids': orderedIds});
+
   /// POST /columns/:id/move-cards-to/:targetId
   Future<void> moveAllCardsToColumn(
           String fromColumnId, String toColumnId) =>

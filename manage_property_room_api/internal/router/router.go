@@ -40,7 +40,7 @@ func New(d Deps) http.Handler {
 	})
 	r.Use(corsHandler.Handler)
 
-	authH := &handlers.AuthHandler{Svc: d.AuthSvc}
+	authH := &handlers.AuthHandler{Svc: d.AuthSvc, Store: d.Store}
 	usersH := &handlers.UsersHandler{Store: d.Store}
 	propsH := &handlers.PropertiesHandler{Store: d.Store}
 	colsH := &handlers.ColumnsHandler{Store: d.Store}
@@ -49,6 +49,7 @@ func New(d Deps) http.Handler {
 	commentsH := &handlers.CommentsHandler{Store: d.Store}
 	activityH := &handlers.ActivityHandler{Store: d.Store}
 	archiveH := &handlers.ArchiveHandler{Store: d.Store}
+	auditH := &handlers.AuditHandler{Store: d.Store}
 
 	// Public
 	r.Get("/health", handlers.Health)
@@ -87,17 +88,21 @@ func New(d Deps) http.Handler {
 			r.Post("/properties/{id}/assign-workers", propsH.AssignWorkers)
 		})
 
-		// Columns
-		r.Post("/properties/{id}/columns", colsH.Create)
-		r.Patch("/columns/{id}", colsH.Update)
-		r.Delete("/columns/{id}", colsH.Delete)
-		r.Post("/columns/{id}/duplicate", colsH.Duplicate)
-		r.Post("/columns/{id}/copy-to/{propertyId}", colsH.CopyTo)
-		r.Post("/columns/{id}/move", colsH.Move)
-		r.Post("/columns/{id}/move-cards-to/{targetId}", colsH.MoveAllCards)
-		r.Post("/columns/{id}/archive-all-cards", colsH.ArchiveAllCards)
-		r.Post("/columns/{id}/archive", colsH.Archive)
-		r.Post("/columns/{id}/config", colsH.SetConfig)
+		// Columns — structure mutations require admin or operator
+		r.Group(func(r chi.Router) {
+			r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleOperator))
+			r.Post("/columns/reorder", colsH.Reorder)
+			r.Post("/properties/{id}/columns", colsH.Create)
+			r.Patch("/columns/{id}", colsH.Update)
+			r.Delete("/columns/{id}", colsH.Delete)
+			r.Post("/columns/{id}/duplicate", colsH.Duplicate)
+			r.Post("/columns/{id}/copy-to/{propertyId}", colsH.CopyTo)
+			r.Post("/columns/{id}/move", colsH.Move)
+			r.Post("/columns/{id}/move-cards-to/{targetId}", colsH.MoveAllCards)
+			r.Post("/columns/{id}/archive-all-cards", colsH.ArchiveAllCards)
+			r.Post("/columns/{id}/archive", colsH.Archive)
+			r.Post("/columns/{id}/config", colsH.SetConfig)
+		})
 
 		// Cards
 		r.Post("/columns/{id}/cards", cardsH.CreateForColumn)
@@ -108,16 +113,14 @@ func New(d Deps) http.Handler {
 		r.Post("/cards/{id}/toggle-done", cardsH.ToggleDone)
 		r.Post("/cards/{id}/archive", cardsH.Archive)
 		r.Post("/cards/{id}/assign", cardsH.Assign)
+		r.Post("/cards/reorder", cardsH.Reorder)
 
-		// Fields
+		// Fields (custom field definitions)
 		r.Get("/fields", fieldsH.List)
-		r.Group(func(r chi.Router) {
-			r.Use(httpx.RequireRole(domain.RoleAdmin))
-			r.Post("/fields", fieldsH.Create)
-			r.Patch("/fields/{id}", fieldsH.Update)
-			r.Delete("/fields/{id}", fieldsH.Delete)
-			r.Post("/fields/reorder", fieldsH.Reorder)
-		})
+		r.Post("/fields", fieldsH.Create)
+		r.Patch("/fields/{id}", fieldsH.Update)
+		r.Delete("/fields/{id}", fieldsH.Delete)
+		r.Post("/fields/reorder", fieldsH.Reorder)
 
 		// Comments
 		r.Get("/cards/{id}/comments", commentsH.List)
@@ -129,6 +132,12 @@ func New(d Deps) http.Handler {
 		// Archive
 		r.Get("/archive", archiveH.List)
 		r.Post("/archive/{id}/restore", archiveH.Restore)
+
+		// Audit (admin only)
+		r.Group(func(r chi.Router) {
+			r.Use(httpx.RequireRole(domain.RoleAdmin))
+			r.Get("/audit", auditH.List)
+		})
 	})
 
 	return r

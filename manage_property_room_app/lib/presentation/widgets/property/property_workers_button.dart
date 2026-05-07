@@ -239,6 +239,7 @@ class _WorkerRow extends ConsumerWidget {
 
   static String _roleLabel(UserRole role) => switch (role) {
         UserRole.admin => 'Admin',
+        UserRole.operator => 'Operador',
         UserRole.cleaning => 'Limpieza',
         UserRole.maintenance => 'Mantenimiento',
       };

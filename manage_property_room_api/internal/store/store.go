@@ -18,6 +18,7 @@ type Store interface {
 	Comments() CommentRepo
 	Activity() ActivityRepo
 	Archive() ArchiveRepo
+	Audit() AuditRepo
 	Close() error
 }
 
@@ -58,6 +59,7 @@ type CardRepo interface {
 	Update(ctx context.Context, c *domain.Card) error
 	Delete(ctx context.Context, id string) error
 	MoveToColumn(ctx context.Context, cardID, targetColumnID string, position int) error
+	Reorder(ctx context.Context, columnID string, orderedIDs []string) error
 }
 
 type FieldRepo interface {
@@ -85,4 +87,9 @@ type ArchiveRepo interface {
 	List(ctx context.Context) ([]domain.ArchiveItem, error)
 	GetByID(ctx context.Context, id string) (*domain.ArchiveItem, error)
 	Delete(ctx context.Context, id string) error
+}
+
+type AuditRepo interface {
+	Create(ctx context.Context, e *domain.AuditEvent) error
+	List(ctx context.Context, limit int) ([]domain.AuditEvent, error)
 }

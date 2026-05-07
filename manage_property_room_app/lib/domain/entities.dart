@@ -190,12 +190,22 @@ class FieldDef {
 
 class ColumnConfig {
   const ColumnConfig({
+    // Form-level toggles
     this.showDescription = true,
     this.showCustomFields = true,
     this.showComments = true,
     this.showAssign = true,
     this.showPriority = true,
     this.showCheckin = true,
+    // Card compact-view toggles (persisted in API, survive hard refresh)
+    this.cardShowDone = true,
+    this.cardShowDescription = true,
+    this.cardShowCleanedBy = true,
+    this.cardShowPriority = true,
+    this.cardShowPriorityBorder = true,
+    this.cardShowCheckin = true,
+    this.cardShowRoomCode = true,
+    this.cardShowImage = false,
   });
 
   final bool showDescription;
@@ -205,6 +215,15 @@ class ColumnConfig {
   final bool showPriority;
   final bool showCheckin;
 
+  final bool cardShowDone;
+  final bool cardShowDescription;
+  final bool cardShowCleanedBy;
+  final bool cardShowPriority;
+  final bool cardShowPriorityBorder;
+  final bool cardShowCheckin;
+  final bool cardShowRoomCode;
+  final bool cardShowImage;
+
   ColumnConfig copyWith({
     bool? showDescription,
     bool? showCustomFields,
@@ -212,6 +231,14 @@ class ColumnConfig {
     bool? showAssign,
     bool? showPriority,
     bool? showCheckin,
+    bool? cardShowDone,
+    bool? cardShowDescription,
+    bool? cardShowCleanedBy,
+    bool? cardShowPriority,
+    bool? cardShowPriorityBorder,
+    bool? cardShowCheckin,
+    bool? cardShowRoomCode,
+    bool? cardShowImage,
   }) =>
       ColumnConfig(
         showDescription: showDescription ?? this.showDescription,
@@ -220,6 +247,14 @@ class ColumnConfig {
         showAssign: showAssign ?? this.showAssign,
         showPriority: showPriority ?? this.showPriority,
         showCheckin: showCheckin ?? this.showCheckin,
+        cardShowDone: cardShowDone ?? this.cardShowDone,
+        cardShowDescription: cardShowDescription ?? this.cardShowDescription,
+        cardShowCleanedBy: cardShowCleanedBy ?? this.cardShowCleanedBy,
+        cardShowPriority: cardShowPriority ?? this.cardShowPriority,
+        cardShowPriorityBorder: cardShowPriorityBorder ?? this.cardShowPriorityBorder,
+        cardShowCheckin: cardShowCheckin ?? this.cardShowCheckin,
+        cardShowRoomCode: cardShowRoomCode ?? this.cardShowRoomCode,
+        cardShowImage: cardShowImage ?? this.cardShowImage,
       );
 
   Map<String, dynamic> toJson() => {
@@ -229,6 +264,14 @@ class ColumnConfig {
         'showAssign': showAssign,
         'showPriority': showPriority,
         'showCheckin': showCheckin,
+        'cardShowDone': cardShowDone,
+        'cardShowDescription': cardShowDescription,
+        'cardShowCleanedBy': cardShowCleanedBy,
+        'cardShowPriority': cardShowPriority,
+        'cardShowPriorityBorder': cardShowPriorityBorder,
+        'cardShowCheckin': cardShowCheckin,
+        'cardShowRoomCode': cardShowRoomCode,
+        'cardShowImage': cardShowImage,
       };
 
   factory ColumnConfig.fromJson(Map<String, dynamic> j) => ColumnConfig(
@@ -238,6 +281,14 @@ class ColumnConfig {
         showAssign: j['showAssign'] as bool? ?? true,
         showPriority: j['showPriority'] as bool? ?? true,
         showCheckin: j['showCheckin'] as bool? ?? true,
+        cardShowDone: j['cardShowDone'] as bool? ?? true,
+        cardShowDescription: j['cardShowDescription'] as bool? ?? true,
+        cardShowCleanedBy: j['cardShowCleanedBy'] as bool? ?? true,
+        cardShowPriority: j['cardShowPriority'] as bool? ?? true,
+        cardShowPriorityBorder: j['cardShowPriorityBorder'] as bool? ?? true,
+        cardShowCheckin: j['cardShowCheckin'] as bool? ?? true,
+        cardShowRoomCode: j['cardShowRoomCode'] as bool? ?? true,
+        cardShowImage: j['cardShowImage'] as bool? ?? false,
       );
 }
 
@@ -664,6 +715,49 @@ class ActivityEvent {
 
   @override
   bool operator ==(Object other) => other is ActivityEvent && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
+}
+
+// ─────────────────────────────────────────
+//  AuditEvent
+// ─────────────────────────────────────────
+
+class AuditEvent {
+  const AuditEvent({
+    required this.id,
+    required this.actorId,
+    required this.actorName,
+    required this.action,
+    required this.entity,
+    required this.entityId,
+    required this.detail,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String actorId;
+  final String actorName;
+  final String action;
+  final String entity;
+  final String entityId;
+  final String detail;
+  final DateTime createdAt;
+
+  factory AuditEvent.fromJson(Map<String, dynamic> j) => AuditEvent(
+        id: j['id'] as String,
+        actorId: j['actorId'] as String,
+        actorName: j['actorName'] as String,
+        action: j['action'] as String,
+        entity: j['entity'] as String,
+        entityId: j['entityId'] as String,
+        detail: (j['detail'] as String?) ?? '',
+        createdAt: DateTime.parse(j['createdAt'] as String),
+      );
+
+  @override
+  bool operator ==(Object other) => other is AuditEvent && other.id == id;
 
   @override
   int get hashCode => id.hashCode;

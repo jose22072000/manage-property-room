@@ -1,6 +1,6 @@
 // Domain enums — no Flutter dependency
 
-enum UserRole { admin, cleaning, maintenance }
+enum UserRole { admin, operator, cleaning, maintenance }
 
 enum CardKind { room, task, free }
 

@@ -269,7 +269,7 @@ class _MobileBoardState extends State<_MobileBoard> {
 //  Desktop/Tablet board — horizontal scroll with drag & drop
 // ─────────────────────────────────────────
 
-class _DesktopBoard extends ConsumerWidget {
+class _DesktopBoard extends ConsumerStatefulWidget {
   const _DesktopBoard({required this.state, required this.propertyId, required this.user});
 
   final BoardState state;
@@ -277,24 +277,131 @@ class _DesktopBoard extends ConsumerWidget {
   final AppUser? user;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return ListView.separated(
+  ConsumerState<_DesktopBoard> createState() => _DesktopBoardState();
+}
+
+class _DesktopBoardState extends ConsumerState<_DesktopBoard> {
+  // Index of column that is currently being hovered by a dragged column
+  int? _hoverTargetIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    final columns = widget.state.columns;
+    final canReorder = widget.user != null &&
+        Policy.canBoard(widget.user!, BoardAction.moveColumn);
+
+    return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.all(16),
-      itemCount: state.columns.length,
-      separatorBuilder: (context, idx) => const SizedBox(width: 12),
-      itemBuilder: (_, i) {
-        final col = state.columns[i];
-        return SizedBox(
-          width: 280,
-          child: BoardColumnWidget(
-            column: col,
-            cards: state.cardsByColumn[col.id] ?? [],
-            propertyId: propertyId,
-            allColumns: state.columns,
-            user: user,
-            isMobile: false,
-          ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < columns.length; i++)
+              _buildColumnSlot(columns, i, canReorder),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColumnSlot(List<BoardColumn> columns, int index, bool canReorder) {
+    final col = columns[index];
+    final isHoverTarget = _hoverTargetIndex == index;
+
+    final columnWidget = Padding(
+      key: ValueKey(col.id),
+      padding: const EdgeInsets.only(right: 12),
+      child: SizedBox(
+        width: 280,
+        child: BoardColumnWidget(
+          column: col,
+          cards: widget.state.cardsByColumn[col.id] ?? [],
+          propertyId: widget.propertyId,
+          allColumns: columns,
+          user: widget.user,
+          isMobile: false,
+        ),
+      ),
+    );
+
+    if (!canReorder) return columnWidget;
+
+    return DragTarget<BoardColumn>(
+      onWillAcceptWithDetails: (details) {
+        if (details.data.id != col.id) {
+          setState(() => _hoverTargetIndex = index);
+        }
+        return details.data.id != col.id;
+      },
+      onLeave: (_) => setState(() {
+        if (_hoverTargetIndex == index) _hoverTargetIndex = null;
+      }),
+      onAcceptWithDetails: (details) {
+        setState(() => _hoverTargetIndex = null);
+        final fromIndex = columns.indexWhere((c) => c.id == details.data.id);
+        if (fromIndex == -1 || fromIndex == index) return;
+        ref.read(boardProvider(widget.propertyId).notifier)
+            .reorderColumns(fromIndex, index);
+      },
+      builder: (context, candidates, rejected) {
+        return Stack(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: isHoverTarget
+                    ? Border.all(color: const Color(0xFF2563EB), width: 2)
+                    : null,
+              ),
+              child: Opacity(
+                opacity: candidates.isNotEmpty ? 0.7 : 1.0,
+                child: Draggable<BoardColumn>(
+                  data: col,
+                  feedback: Material(
+                    elevation: 8,
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      width: 280,
+                      height: 80,
+                      child: Opacity(
+                        opacity: 0.85,
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFF2563EB)),
+                          ),
+                          child: Text(col.title,
+                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                        ),
+                      ),
+                    ),
+                  ),
+                  childWhenDragging: Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: SizedBox(
+                      width: 280,
+                      child: Opacity(
+                        opacity: 0.3,
+                        child: BoardColumnWidget(
+                          column: col,
+                          cards: widget.state.cardsByColumn[col.id] ?? [],
+                          propertyId: widget.propertyId,
+                          allColumns: columns,
+                          user: widget.user,
+                          isMobile: false,
+                        ),
+                      ),
+                    ),
+                  ),
+                  child: columnWidget,
+                ),
+              ),
+            ),
+          ],
         );
       },
     );

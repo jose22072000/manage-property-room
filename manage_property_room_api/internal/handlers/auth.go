@@ -1,14 +1,21 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/jose/manage_property_room_api/internal/auth"
+	"github.com/jose/manage_property_room_api/internal/domain"
 	"github.com/jose/manage_property_room_api/internal/httpx"
+	"github.com/jose/manage_property_room_api/internal/store"
 )
 
 type AuthHandler struct {
-	Svc *auth.Service
+	Svc   *auth.Service
+	Store store.Store
 }
 
 type loginRequest struct {
@@ -31,6 +38,15 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err)
 		return
 	}
+	// Record login event (actor is the just-authenticated user)
+	u := res.User
+	go func() {
+		_ = h.Store.Audit().Create(context.Background(), &domain.AuditEvent{
+			ID: uuid.NewString(), ActorID: u.ID, ActorName: u.Name,
+			Action: "login", Entity: "user", EntityID: u.ID,
+			Detail: u.Email, CreatedAt: time.Now().UTC(),
+		})
+	}()
 	httpx.WriteJSON(w, http.StatusOK, res)
 }
 

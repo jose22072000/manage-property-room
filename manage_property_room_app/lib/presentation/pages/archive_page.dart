@@ -109,6 +109,13 @@ class _ArchivedCardTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final propsAsync = ref.watch(propertiesProvider);
+    final propertyName = propsAsync.valueOrNull
+            ?.where((p) => p.id == card.propertyId)
+            .map((p) => p.name)
+            .firstOrNull ??
+        '';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -131,7 +138,13 @@ class _ArchivedCardTile extends ConsumerWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(card.sourceColumnTitle, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+            if (propertyName.isNotEmpty)
+              Text(
+                propertyName,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
+              ),
+            if (card.sourceColumnTitle.isNotEmpty)
+              Text(card.sourceColumnTitle, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
             if (card.priority == CardPriority.high)
               Container(
                 margin: const EdgeInsets.only(top: 4),
