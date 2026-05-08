@@ -50,6 +50,31 @@ class ToastNotifier extends Notifier<List<ToastMessage>> {
 final toastProvider = NotifierProvider<ToastNotifier, List<ToastMessage>>(ToastNotifier.new);
 
 // ══════════════════════════════════════════
+//  Live notification banners
+// ══════════════════════════════════════════
+
+class NotifBannerNotifier extends Notifier<List<AuditEvent>> {
+  @override
+  List<AuditEvent> build() => [];
+
+  void add(AuditEvent event) {
+    if (state.any((e) => e.id == event.id)) return; // dedupe
+    state = [event, ...state];
+    Future.delayed(const Duration(seconds: 5), () => dismiss(event.id));
+  }
+
+  void dismiss(String id) {
+    state = state.where((e) => e.id != id).toList();
+  }
+}
+
+final notifBannerProvider =
+    NotifierProvider<NotifBannerNotifier, List<AuditEvent>>(NotifBannerNotifier.new);
+
+/// Tracks the ID of the most recently seen audit event to detect new ones.
+final notifLastSeenIdProvider = StateProvider<String?>((ref) => null);
+
+// ══════════════════════════════════════════
 //  Confirm dialog
 // ══════════════════════════════════════════
 
@@ -822,6 +847,32 @@ class ArchiveNotifier extends AsyncNotifier<List<ArchivedCard>> {
 
 final archiveProvider =
     AsyncNotifierProvider<ArchiveNotifier, List<ArchivedCard>>(ArchiveNotifier.new);
+
+// ══════════════════════════════════════════
+//  Groups
+// ══════════════════════════════════════════
+
+class GroupsNotifier extends AsyncNotifier<List<Group>> {
+  @override
+  Future<List<Group>> build() => ref.read(groupsApiProvider).list();
+
+  Future<void> create(String name) async {
+    final g = await ref.read(groupsApiProvider).create(name: name);
+    state = AsyncData([...state.valueOrNull ?? [], g]);
+  }
+
+  Future<void> updateGroup(String id, {String? name, List<String>? userIds, List<String>? propertyIds}) async {
+    final g = await ref.read(groupsApiProvider).update(id, name: name, userIds: userIds, propertyIds: propertyIds);
+    state = AsyncData((state.valueOrNull ?? []).map((e) => e.id == id ? g : e).toList());
+  }
+
+  Future<void> delete(String id) async {
+    await ref.read(groupsApiProvider).delete(id);
+    state = AsyncData((state.valueOrNull ?? []).where((e) => e.id != id).toList());
+  }
+}
+
+final groupsProvider = AsyncNotifierProvider<GroupsNotifier, List<Group>>(GroupsNotifier.new);
 
 // ══════════════════════════════════════════
 //  Comments per card (family)

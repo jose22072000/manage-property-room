@@ -58,7 +58,14 @@ class CardItemWidget extends ConsumerWidget {
       elevation: 1,
       shadowColor: const Color(0x33000000),
       child: InkWell(
-        onTap: onTap,
+        onTap: canToggle
+            ? () {
+                final willBeDone = !card.isDone;
+                ref
+                    .read(boardProvider(propertyId).notifier)
+                    .toggleCardDone(card.id, cleanedBy: willBeDone ? (user?.initials ?? '') : '');
+              }
+            : onTap,
         borderRadius: BorderRadius.circular(10),
         child: Container(
           decoration: BoxDecoration(
@@ -133,6 +140,15 @@ class CardItemWidget extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (onTap != null)
+                  InkWell(
+                    onTap: onTap,
+                    borderRadius: BorderRadius.circular(6),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.edit_outlined, size: 15, color: Color(0xFF94A3B8)),
+                    ),
+                  ),
               ],
             ),
             if (card.description.isNotEmpty && prefs.cardShowDescription) ...[
@@ -174,7 +190,10 @@ class CardItemWidget extends ConsumerWidget {
                 if (isMobile && allColumns.length > 1)
                   GestureDetector(
                     onTap: () => _showMoveDialog(context, ref),
-                    child: const Icon(Icons.open_with, size: 14, color: Color(0xFFCBD5E1)),
+                    child: const Padding(
+                      padding: EdgeInsets.fromLTRB(8, 2, 0, 2),
+                      child: Icon(Icons.open_with, size: 20, color: Color(0xFF94A3B8)),
+                    ),
                   ),
               ],
             ),

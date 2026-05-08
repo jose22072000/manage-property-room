@@ -144,18 +144,29 @@ class _ArchivedCardTile extends ConsumerWidget {
                 propertyName,
                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
               ),
-            if (card.sourceColumnTitle.isNotEmpty)
-              Text(card.sourceColumnTitle, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
-            if (card.priority == CardPriority.high)
-              Container(
-                margin: const EdgeInsets.only(top: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEE2E2),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text('Alta prioridad', style: TextStyle(fontSize: 10, color: Color(0xFFEF4444), fontWeight: FontWeight.w600)),
-              ),
+            const SizedBox(height: 3),
+            Row(
+              children: [
+                if (card.sourceColumnTitle.isNotEmpty) ...[
+                  const Icon(Icons.view_column_outlined, size: 11, color: Color(0xFF94A3B8)),
+                  const SizedBox(width: 3),
+                  Text(card.sourceColumnTitle,
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                  const SizedBox(width: 8),
+                ],
+                if (card.archivedByName.isNotEmpty) ...[
+                  const Icon(Icons.person_outline, size: 11, color: Color(0xFF94A3B8)),
+                  const SizedBox(width: 3),
+                  Text(card.archivedByName,
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                  const SizedBox(width: 8),
+                ],
+                const Icon(Icons.schedule, size: 11, color: Color(0xFF94A3B8)),
+                const SizedBox(width: 3),
+                Text(formatDate(card.archivedAt),
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+              ],
+            ),
           ],
         ),
         trailing: IconButton(

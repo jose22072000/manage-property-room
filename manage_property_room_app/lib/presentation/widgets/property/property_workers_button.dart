@@ -5,13 +5,12 @@ import '../../../application/notifiers/notifiers.dart';
 import '../../../core/errors.dart';
 import '../../../core/responsive.dart';
 import '../../../domain/domain.dart';
+import '../../../permissions/policy.dart';
 
-/// Botón "trabajadores asignados" para mostrar/asignar usuarios a una
-/// propiedad. Visible para todos; sólo el admin puede modificar (los demás
-/// ven la lista en read-only).
-///
-/// Equivalente al modal de la app React: icono persona + contador como
-/// badge → tap levanta un modal con la lista de usuarios.
+/// Botón "trabajadores asignados" para mostrar/asignar usuarios a una propiedad.
+/// - Admin: ve y asigna a todos los usuarios
+/// - Owner: ve y asigna supervisores a la propiedad
+/// - Supervisor: ve y asigna trabajadores (cleaning/maintenance)
 class PropertyWorkersButton extends ConsumerWidget {
   const PropertyWorkersButton({
     super.key,
@@ -25,6 +24,7 @@ class PropertyWorkersButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final usersAsync = ref.watch(usersProvider);
+    final currentUser = ref.watch(currentUserProvider).valueOrNull;
     final assigned = usersAsync.valueOrNull
             ?.where((u) => u.assignedPropertyIds.contains(propertyId))
             .toList() ??
@@ -33,11 +33,16 @@ class PropertyWorkersButton extends ConsumerWidget {
     final fg = lightOnDark ? Colors.white : const Color(0xFF334155);
     final bg = lightOnDark ? const Color(0x33FFFFFF) : const Color(0xFFF1F5F9);
 
+    // Determine what label to show based on role
+    final label = (currentUser?.role == UserRole.owner)
+        ? 'sup.'
+        : '${assigned.length}';
+
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _open(context),
+        onTap: () => _open(context, currentUser),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
@@ -50,7 +55,7 @@ class PropertyWorkersButton extends ConsumerWidget {
               Icon(Icons.group_outlined, size: 14, color: fg),
               const SizedBox(width: 4),
               Text(
-                '${assigned.length}',
+                label,
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -64,24 +69,45 @@ class PropertyWorkersButton extends ConsumerWidget {
     );
   }
 
-  void _open(BuildContext context) {
+  void _open(BuildContext context, AppUser? currentUser) {
     showResponsiveModal<void>(
       context: context,
       maxWidth: 460,
-      builder: (_) => _WorkersModal(propertyId: propertyId),
+      builder: (_) => _WorkersModal(
+        propertyId: propertyId,
+        currentUser: currentUser,
+      ),
     );
   }
 }
 
 class _WorkersModal extends ConsumerWidget {
-  const _WorkersModal({required this.propertyId});
+  const _WorkersModal({required this.propertyId, required this.currentUser});
   final String propertyId;
+  final AppUser? currentUser;
+
+  /// Returns the roles this user can assign to this property.
+  List<UserRole> _assignableRoles() {
+    if (currentUser == null) return [];
+    switch (currentUser!.role) {
+      case UserRole.admin:
+        return [UserRole.operator, UserRole.cleaning, UserRole.maintenance, UserRole.supervisor];
+      case UserRole.supervisor:
+        return [UserRole.cleaning, UserRole.maintenance];
+      default:
+        return [];
+    }
+  }
+
+  bool _canToggle() {
+    if (currentUser == null) return false;
+    return currentUser!.role == UserRole.admin || currentUser!.role == UserRole.supervisor;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final usersAsync = ref.watch(usersProvider);
-    final currentUser = ref.watch(currentUserProvider).valueOrNull;
-    final isAdmin = currentUser?.role == UserRole.admin;
+    final assignableRoles = _assignableRoles();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
@@ -92,7 +118,17 @@ class _WorkersModal extends ConsumerWidget {
         ),
         error: (e, _) => Text(friendlyError(e)),
         data: (users) {
-          final sorted = [...users]..sort((a, b) => a.name.compareTo(b.name));
+          // Filter users to only show assignable roles
+          final List<AppUser> filtered;
+          if (assignableRoles.isEmpty) {
+            filtered = [...users]..sort((a, b) => a.name.compareTo(b.name));
+          } else {
+            filtered = users.where((u) => assignableRoles.contains(u.role)).toList()
+              ..sort((a, b) => a.name.compareTo(b.name));
+          }
+
+          final canToggle = _canToggle();
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
@@ -101,10 +137,10 @@ class _WorkersModal extends ConsumerWidget {
                 children: [
                   const Icon(Icons.group_outlined, size: 20, color: Color(0xFF2563EB)),
                   const SizedBox(width: 8),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Trabajadores asignados',
-                      style: TextStyle(
+                      _modalTitle(),
+                      style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF0F172A),
@@ -117,20 +153,20 @@ class _WorkersModal extends ConsumerWidget {
                   ),
                 ],
               ),
-              if (!isAdmin)
+              if (!canToggle)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 8, left: 28, right: 4),
                   child: Text(
-                    'Sólo lectura · pide a un admin para modificar.',
+                    'Sólo lectura.',
                     style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
                   ),
                 ),
               const SizedBox(height: 8),
-              if (sorted.isEmpty)
+              if (filtered.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Center(
-                    child: Text('No hay usuarios cargados',
+                    child: Text('No hay usuarios disponibles',
                         style: TextStyle(color: Color(0xFF94A3B8))),
                   ),
                 )
@@ -139,11 +175,11 @@ class _WorkersModal extends ConsumerWidget {
                   child: SingleChildScrollView(
                     child: Column(
                       children: [
-                        for (final u in sorted)
+                        for (final u in filtered)
                           _WorkerRow(
                             user: u,
                             propertyId: propertyId,
-                            isAdmin: isAdmin,
+                            canToggle: canToggle,
                           ),
                       ],
                     ),
@@ -155,24 +191,36 @@ class _WorkersModal extends ConsumerWidget {
       ),
     );
   }
+
+  String _modalTitle() {
+    if (currentUser == null) return 'Asignados';
+    switch (currentUser!.role) {
+      case UserRole.admin:
+        return 'Asignar trabajadores';
+      case UserRole.supervisor:
+        return 'Asignar a mi equipo';
+      default:
+        return 'Trabajadores asignados';
+    }
+  }
 }
 
 class _WorkerRow extends ConsumerWidget {
   const _WorkerRow({
     required this.user,
     required this.propertyId,
-    required this.isAdmin,
+    required this.canToggle,
   });
   final AppUser user;
   final String propertyId;
-  final bool isAdmin;
+  final bool canToggle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final assigned = user.assignedPropertyIds.contains(propertyId);
 
     Future<void> toggle() async {
-      if (!isAdmin) return;
+      if (!canToggle) return;
       final next = [...user.assignedPropertyIds];
       if (assigned) {
         next.remove(propertyId);
@@ -185,7 +233,7 @@ class _WorkerRow extends ConsumerWidget {
     }
 
     return InkWell(
-      onTap: isAdmin ? toggle : null,
+      onTap: canToggle ? toggle : null,
       borderRadius: BorderRadius.circular(10),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
@@ -221,7 +269,7 @@ class _WorkerRow extends ConsumerWidget {
                 ],
               ),
             ),
-            if (isAdmin)
+            if (canToggle)
               Checkbox(
                 value: assigned,
                 onChanged: (_) => toggle(),
@@ -243,5 +291,7 @@ class _WorkerRow extends ConsumerWidget {
         UserRole.operator => 'Operador',
         UserRole.cleaning => 'Limpieza',
         UserRole.maintenance => 'Mantenimiento',
+        UserRole.owner => 'Propietario',
+        UserRole.supervisor => 'Supervisor',
       };
 }

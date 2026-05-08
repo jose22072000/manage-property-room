@@ -28,6 +28,13 @@ func nowUTC() time.Time { return time.Now().UTC() }
 
 func boolToInt(b bool) int { if b { return 1 }; return 0 }
 
+func ptrStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 func marshalJSON(v any) (string, error) {
 	if v == nil {
 		return "", nil
@@ -47,8 +54,9 @@ type userRow struct {
 	Name               string `db:"name"`
 	Initials           string `db:"initials"`
 	Role               string `db:"role"`
-	MustChangePassword int    `db:"must_change_password"`
-	CreatedAt          string `db:"created_at"`
+	MustChangePassword int     `db:"must_change_password"`
+	CreatedBy          *string `db:"created_by"`
+	CreatedAt          string  `db:"created_at"`
 	UpdatedAt          string `db:"updated_at"`
 }
 
@@ -59,6 +67,7 @@ func (r userRow) toDomain(assigned []string) *domain.User {
 		ID: r.ID, Email: r.Email, PasswordHash: r.PasswordHash,
 		Name: r.Name, Initials: r.Initials, Role: domain.UserRole(r.Role),
 		MustChangePassword: r.MustChangePassword == 1,
+		CreatedBy: ptrStr(r.CreatedBy),
 		AssignedPropertyIDs: assigned,
 		CreatedAt: created, UpdatedAt: updated,
 	}
@@ -70,10 +79,10 @@ func (r *userRepo) Create(ctx context.Context, u *domain.User) error {
 	}
 	u.UpdatedAt = nowUTC()
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO users(id,email,password_hash,name,initials,role,must_change_password,created_at,updated_at)
-		 VALUES(?,?,?,?,?,?,?,?,?)`,
+		`INSERT INTO users(id,email,password_hash,name,initials,role,must_change_password,created_by,created_at,updated_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?)`,
 		u.ID, u.Email, u.PasswordHash, u.Name, u.Initials, string(u.Role),
-		boolToInt(u.MustChangePassword),
+		boolToInt(u.MustChangePassword), u.CreatedBy,
 		u.CreatedAt.Format(time.RFC3339Nano), u.UpdatedAt.Format(time.RFC3339Nano))
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -187,20 +196,48 @@ func (r *userRepo) ListByProperty(ctx context.Context, propertyID string) ([]dom
 	return out, nil
 }
 
+func (r *userRepo) ListCreatedBy(ctx context.Context, creatorID string, roles []domain.UserRole) ([]domain.User, error) {
+	if len(roles) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(roles))
+	args := []any{creatorID}
+	for i, role := range roles {
+		placeholders[i] = "?"
+		args = append(args, string(role))
+	}
+	q := fmt.Sprintf(
+		`SELECT * FROM users WHERE created_by=? AND role IN (%s) ORDER BY created_at`,
+		strings.Join(placeholders, ","))
+	var rows []userRow
+	if err := r.db.SelectContext(ctx, &rows, q, args...); err != nil {
+		return nil, err
+	}
+	out := make([]domain.User, 0, len(rows))
+	for _, row := range rows {
+		assigned, err := r.assignedFor(ctx, row.ID)
+		if err != nil { return nil, err }
+		out = append(out, *row.toDomain(assigned))
+	}
+	return out, nil
+}
+
 // ── properties ───────────────────────────────────────────────────────────────
 
 type propertyRepo struct{ db *sqlx.DB }
 
 type propertyRow struct {
-	ID         string `db:"id"`
-	Code       string `db:"code"`
-	Name       string `db:"name"`
-	TotalRooms int    `db:"total_rooms"`
-	ColorSeed  int    `db:"color_seed"`
-	Position   int    `db:"position"`
-	Archived   int    `db:"archived"`
-	CreatedAt  string `db:"created_at"`
-	UpdatedAt  string `db:"updated_at"`
+	ID          string  `db:"id"`
+	Code        string  `db:"code"`
+	Name        string  `db:"name"`
+	TotalRooms  int     `db:"total_rooms"`
+	ColorSeed   int     `db:"color_seed"`
+	Position    int     `db:"position"`
+	Archived    int     `db:"archived"`
+	OwnerUserID *string `db:"owner_user_id"`
+	ImageURL    string  `db:"image_url"`
+	CreatedAt   string  `db:"created_at"`
+	UpdatedAt   string  `db:"updated_at"`
 }
 
 func (r propertyRow) toDomain() *domain.Property {
@@ -209,6 +246,7 @@ func (r propertyRow) toDomain() *domain.Property {
 	return &domain.Property{
 		ID: r.ID, Code: r.Code, Name: r.Name, TotalRooms: r.TotalRooms,
 		ColorSeed: r.ColorSeed, Position: r.Position, Archived: r.Archived == 1,
+		OwnerUserID: ptrStr(r.OwnerUserID), ImageURL: r.ImageURL,
 		CreatedAt: created, UpdatedAt: updated,
 	}
 }
@@ -217,9 +255,10 @@ func (r *propertyRepo) Create(ctx context.Context, p *domain.Property) error {
 	if p.CreatedAt.IsZero() { p.CreatedAt = nowUTC() }
 	p.UpdatedAt = nowUTC()
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO properties(id,code,name,total_rooms,color_seed,position,archived,created_at,updated_at)
-		 VALUES(?,?,?,?,?,?,?,?,?)`,
+		`INSERT INTO properties(id,code,name,total_rooms,color_seed,position,archived,owner_user_id,image_url,created_at,updated_at)
+		 VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
 		p.ID, p.Code, p.Name, p.TotalRooms, p.ColorSeed, p.Position, boolToInt(p.Archived),
+		p.OwnerUserID, p.ImageURL,
 		p.CreatedAt.Format(time.RFC3339Nano), p.UpdatedAt.Format(time.RFC3339Nano))
 	return err
 }
@@ -245,12 +284,47 @@ func (r *propertyRepo) List(ctx context.Context) ([]domain.Property, error) {
 func (r *propertyRepo) Update(ctx context.Context, p *domain.Property) error {
 	p.UpdatedAt = nowUTC()
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE properties SET code=?,name=?,total_rooms=?,color_seed=?,position=?,archived=?,updated_at=? WHERE id=?`,
+		`UPDATE properties SET code=?,name=?,total_rooms=?,color_seed=?,position=?,archived=?,owner_user_id=?,image_url=?,updated_at=? WHERE id=?`,
 		p.Code, p.Name, p.TotalRooms, p.ColorSeed, p.Position, boolToInt(p.Archived),
+		p.OwnerUserID, p.ImageURL,
 		p.UpdatedAt.Format(time.RFC3339Nano), p.ID)
 	if err != nil { return err }
 	if n, _ := res.RowsAffected(); n == 0 { return store.ErrNotFound }
 	return nil
+}
+
+func (r *propertyRepo) ListByOwner(ctx context.Context, ownerID string) ([]domain.Property, error) {
+	var rows []propertyRow
+	if err := r.db.SelectContext(ctx, &rows,
+		`SELECT * FROM properties WHERE owner_user_id=? ORDER BY position, created_at`, ownerID); err != nil {
+		return nil, err
+	}
+	out := make([]domain.Property, 0, len(rows))
+	for _, row := range rows { out = append(out, *row.toDomain()) }
+	return out, nil
+}
+
+func (r *propertyRepo) ListBySupervisor(ctx context.Context, supervisorID string) ([]domain.Property, error) {
+	var ids []string
+	if err := r.db.SelectContext(ctx, &ids,
+		`SELECT property_id FROM property_supervisors WHERE supervisor_id=?`, supervisorID); err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids { placeholders[i] = "?"; args[i] = id }
+	q := fmt.Sprintf(`SELECT * FROM properties WHERE id IN (%s) ORDER BY position, created_at`,
+		strings.Join(placeholders, ","))
+	var rows []propertyRow
+	if err := r.db.SelectContext(ctx, &rows, q, args...); err != nil {
+		return nil, err
+	}
+	out := make([]domain.Property, 0, len(rows))
+	for _, row := range rows { out = append(out, *row.toDomain()) }
+	return out, nil
 }
 
 func (r *propertyRepo) Delete(ctx context.Context, id string) error {
@@ -847,29 +921,239 @@ type auditRepo struct{ db *sqlx.DB }
 
 func (r *auditRepo) Create(ctx context.Context, e *domain.AuditEvent) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO audit_events(id,actor_id,actor_name,action,entity,entity_id,detail,created_at)
-		 VALUES(?,?,?,?,?,?,?,?)`,
+		`INSERT INTO audit_events(id,actor_id,actor_name,action,entity,entity_id,detail,property_id,created_at)
+                 VALUES(?,?,?,?,?,?,?,?,?)`,
 		e.ID, e.ActorID, e.ActorName, e.Action, e.Entity, e.EntityID, e.Detail,
-		e.CreatedAt.UTC().Format(time.RFC3339Nano))
+		e.PropertyID, e.CreatedAt.UTC().Format(time.RFC3339Nano))
 	return err
 }
 
-func (r *auditRepo) List(ctx context.Context, limit int) ([]domain.AuditEvent, error) {
-	if limit <= 0 { limit = 200 }
-	rows, err := r.db.QueryContext(ctx,
-		`SELECT id,actor_id,actor_name,action,entity,entity_id,detail,created_at
-		 FROM audit_events ORDER BY created_at DESC LIMIT ?`, limit)
-	if err != nil { return nil, err }
+func (r *auditRepo) scanAuditRows(rows *sql.Rows) ([]domain.AuditEvent, error) {
 	defer rows.Close()
 	out := make([]domain.AuditEvent, 0)
 	for rows.Next() {
 		var e domain.AuditEvent
 		var ts string
-		if err := rows.Scan(&e.ID, &e.ActorID, &e.ActorName, &e.Action, &e.Entity, &e.EntityID, &e.Detail, &ts); err != nil {
+		var pid *string
+		if err := rows.Scan(&e.ID, &e.ActorID, &e.ActorName, &e.Action, &e.Entity, &e.EntityID, &e.Detail, &pid, &ts); err != nil {
 			return nil, err
 		}
+		if pid != nil { e.PropertyID = *pid }
 		if t, err := time.Parse(time.RFC3339Nano, ts); err == nil { e.CreatedAt = t }
 		out = append(out, e)
 	}
 	return out, rows.Err()
 }
+
+func (r *auditRepo) List(ctx context.Context, limit int) ([]domain.AuditEvent, error) {
+	if limit <= 0 { limit = 200 }
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id,actor_id,actor_name,action,entity,entity_id,detail,property_id,created_at
+                 FROM audit_events ORDER BY created_at DESC LIMIT ?`, limit)
+	if err != nil { return nil, err }
+	return r.scanAuditRows(rows)
+}
+
+func (r *auditRepo) ListByPropertyIDs(ctx context.Context, propertyIDs []string, limit int) ([]domain.AuditEvent, error) {
+	if len(propertyIDs) == 0 { return []domain.AuditEvent{}, nil }
+	if limit <= 0 { limit = 200 }
+	placeholders := strings.Repeat("?,", len(propertyIDs))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, 0, len(propertyIDs)+1)
+	for _, id := range propertyIDs { args = append(args, id) }
+	args = append(args, limit)
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id,actor_id,actor_name,action,entity,entity_id,detail,property_id,created_at
+                 FROM audit_events WHERE property_id IN (`+placeholders+`)
+                 ORDER BY created_at DESC LIMIT ?`, args...)
+	if err != nil { return nil, err }
+	return r.scanAuditRows(rows)
+}
+
+// ─────────────────────────────────────────
+//  groupRepo
+// ─────────────────────────────────────────
+
+type groupRepo struct{ db *sqlx.DB }
+
+func (r *groupRepo) Create(ctx context.Context, g *domain.Group) error {
+	now := nowUTC()
+	if g.CreatedAt.IsZero() { g.CreatedAt = now }
+	g.UpdatedAt = now
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO groups(id,name,created_at,updated_at) VALUES(?,?,?,?)`,
+		g.ID, g.Name, g.CreatedAt.Format(time.RFC3339Nano), g.UpdatedAt.Format(time.RFC3339Nano))
+	return err
+}
+
+func (r *groupRepo) GetByID(ctx context.Context, id string) (*domain.Group, error) {
+	var row struct {
+		ID        string `db:"id"`
+		Name      string `db:"name"`
+		CreatedAt string `db:"created_at"`
+		UpdatedAt string `db:"updated_at"`
+	}
+	if err := r.db.GetContext(ctx, &row, `SELECT * FROM groups WHERE id=?`, id); err != nil {
+		return nil, wrapNotFound(err)
+	}
+	g := &domain.Group{ID: row.ID, Name: row.Name}
+	g.CreatedAt, _ = time.Parse(time.RFC3339Nano, row.CreatedAt)
+	g.UpdatedAt, _ = time.Parse(time.RFC3339Nano, row.UpdatedAt)
+	userIDs, _ := r.usersFor(ctx, id)
+	g.UserIDs = userIDs
+	propIDs, _ := r.propertiesFor(ctx, id)
+	g.PropertyIDs = propIDs
+	return g, nil
+}
+
+func (r *groupRepo) List(ctx context.Context) ([]domain.Group, error) {
+	var rows []struct {
+		ID        string `db:"id"`
+		Name      string `db:"name"`
+		CreatedAt string `db:"created_at"`
+		UpdatedAt string `db:"updated_at"`
+	}
+	if err := r.db.SelectContext(ctx, &rows, `SELECT * FROM groups ORDER BY created_at`); err != nil {
+		return nil, err
+	}
+	out := make([]domain.Group, 0, len(rows))
+	for _, row := range rows {
+		g := domain.Group{ID: row.ID, Name: row.Name}
+		g.CreatedAt, _ = time.Parse(time.RFC3339Nano, row.CreatedAt)
+		g.UpdatedAt, _ = time.Parse(time.RFC3339Nano, row.UpdatedAt)
+		g.UserIDs, _ = r.usersFor(ctx, row.ID)
+		g.PropertyIDs, _ = r.propertiesFor(ctx, row.ID)
+		out = append(out, g)
+	}
+	return out, nil
+}
+
+func (r *groupRepo) Update(ctx context.Context, g *domain.Group) error {
+	g.UpdatedAt = nowUTC()
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE groups SET name=?,updated_at=? WHERE id=?`,
+		g.Name, g.UpdatedAt.Format(time.RFC3339Nano), g.ID)
+	if err != nil { return err }
+	if n, _ := res.RowsAffected(); n == 0 { return store.ErrNotFound }
+	return nil
+}
+
+func (r *groupRepo) Delete(ctx context.Context, id string) error {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM groups WHERE id=?`, id)
+	if err != nil { return err }
+	if n, _ := res.RowsAffected(); n == 0 { return store.ErrNotFound }
+	return nil
+}
+
+func (r *groupRepo) SetUsers(ctx context.Context, groupID string, userIDs []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil { return err }
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(ctx, `DELETE FROM group_users WHERE group_id=?`, groupID); err != nil {
+		return err
+	}
+	for _, uid := range userIDs {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO group_users(group_id,user_id) VALUES(?,?)`, groupID, uid); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *groupRepo) SetProperties(ctx context.Context, groupID string, propertyIDs []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil { return err }
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(ctx, `DELETE FROM group_properties WHERE group_id=?`, groupID); err != nil {
+		return err
+	}
+	for _, pid := range propertyIDs {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO group_properties(group_id,property_id) VALUES(?,?)`, groupID, pid); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *groupRepo) ListPropertiesForUser(ctx context.Context, userID string) ([]string, error) {
+	var ids []string
+	err := r.db.SelectContext(ctx, &ids,
+		`SELECT DISTINCT gp.property_id
+		 FROM group_properties gp
+		 JOIN group_users gu ON gu.group_id = gp.group_id
+		 WHERE gu.user_id = ?`, userID)
+	return ids, err
+}
+
+func (r *groupRepo) usersFor(ctx context.Context, groupID string) ([]string, error) {
+	var ids []string
+	err := r.db.SelectContext(ctx, &ids, `SELECT user_id FROM group_users WHERE group_id=?`, groupID)
+	return ids, err
+}
+
+func (r *groupRepo) propertiesFor(ctx context.Context, groupID string) ([]string, error) {
+	var ids []string
+	err := r.db.SelectContext(ctx, &ids, `SELECT property_id FROM group_properties WHERE group_id=?`, groupID)
+	return ids, err
+}
+
+func (r *groupRepo) ListForSupervisor(ctx context.Context, supervisorID string) ([]domain.Group, error) {
+	var rows []struct {
+		ID        string `db:"id"`
+		Name      string `db:"name"`
+		CreatedAt string `db:"created_at"`
+		UpdatedAt string `db:"updated_at"`
+	}
+	if err := r.db.SelectContext(ctx, &rows,
+		`SELECT g.* FROM groups g
+		 INNER JOIN group_users gu ON gu.group_id = g.id
+		 WHERE gu.user_id = ?
+		 ORDER BY g.created_at`, supervisorID); err != nil {
+		return nil, err
+	}
+	out := make([]domain.Group, 0, len(rows))
+	for _, row := range rows {
+		g := domain.Group{ID: row.ID, Name: row.Name}
+		g.CreatedAt, _ = time.Parse(time.RFC3339Nano, row.CreatedAt)
+		g.UpdatedAt, _ = time.Parse(time.RFC3339Nano, row.UpdatedAt)
+		g.UserIDs, _ = r.usersFor(ctx, row.ID)
+		g.PropertyIDs, _ = r.propertiesFor(ctx, row.ID)
+		out = append(out, g)
+	}
+	return out, nil
+}
+
+// ── property supervisors ─────────────────────────────────────────────────────
+
+type propertySupervisorRepo struct{ db *sqlx.DB }
+
+func (r *propertySupervisorRepo) SetSupervisors(ctx context.Context, propertyID string, supervisorIDs []string) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil { return err }
+	defer tx.Rollback() //nolint:errcheck
+	if _, err := tx.ExecContext(ctx, `DELETE FROM property_supervisors WHERE property_id=?`, propertyID); err != nil {
+		return err
+	}
+	for _, sid := range supervisorIDs {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT OR IGNORE INTO property_supervisors(property_id,supervisor_id) VALUES(?,?)`, propertyID, sid); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (r *propertySupervisorRepo) ListForProperty(ctx context.Context, propertyID string) ([]string, error) {
+	var ids []string
+	err := r.db.SelectContext(ctx, &ids,
+		`SELECT supervisor_id FROM property_supervisors WHERE property_id=?`, propertyID)
+	return ids, err
+}
+
+func (r *propertySupervisorRepo) ListPropertiesForSupervisor(ctx context.Context, supervisorID string) ([]string, error) {
+	var ids []string
+	err := r.db.SelectContext(ctx, &ids,
+		`SELECT property_id FROM property_supervisors WHERE supervisor_id=?`, supervisorID)
+	return ids, err
+}
+

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 
 /// Typed errors produced by [ApiClient].
 class ApiException implements Exception {
@@ -73,6 +74,40 @@ class ApiClient {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Upload an image file as multipart/form-data, returns decoded JSON.
+  Future<T> postMultipart<T>(String path, XFile file) async {
+    if (baseUrl.isEmpty) {
+      throw ApiException('NOT_CONFIGURED', 'API base URL is empty');
+    }
+    final uri = Uri.parse('$baseUrl$path');
+    final request = http.MultipartRequest('POST', uri);
+    if (_session.isAuthenticated) {
+      request.headers['Authorization'] = 'Bearer ${_session.token}';
+    }
+    request.files.add(await http.MultipartFile.fromPath('file', file.path,
+        filename: file.name));
+    http.StreamedResponse streamed;
+    try {
+      streamed = await _http.send(request).timeout(_timeout);
+    } on TimeoutException {
+      throw NetworkException('Request timed out after ${_timeout.inSeconds}s');
+    } catch (e) {
+      throw NetworkException(e.toString());
+    }
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      if (res.body.isEmpty) return null as T;
+      return jsonDecode(res.body) as T;
+    }
+    if (res.statusCode == 401) {
+      _session.clear();
+      throw UnauthorizedException(_extractMessage(res) ?? 'Unauthorized');
+    }
+    final msg = _extractMessage(res) ?? 'HTTP ${res.statusCode}';
+    final code = _extractCode(res) ?? 'HTTP_${res.statusCode}';
+    throw ApiException(code, msg, statusCode: res.statusCode);
   }
 
   void close() => _http.close();

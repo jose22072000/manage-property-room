@@ -3,9 +3,78 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/notifiers/notifiers.dart';
 import '../../core/errors.dart';
 import '../../domain/domain.dart';
+import '../../permissions/policy.dart';
+import 'groups_page.dart';
 
-class UsersPage extends ConsumerWidget {
+class UsersPage extends ConsumerStatefulWidget {
   const UsersPage({super.key});
+
+  @override
+  ConsumerState<UsersPage> createState() => _UsersPageState();
+}
+
+class _UsersPageState extends ConsumerState<UsersPage>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentUser = ref.watch(currentUserProvider).valueOrNull;
+    final showGroups = currentUser != null && Policy.canManageGroups(currentUser);
+
+    if (!showGroups) {
+      // Owner: only shows their supervisors — single tab view
+      return _UsersTab(tabController: null);
+    }
+
+    return Column(
+      children: [
+        Container(
+          color: const Color(0xFF1E293B),
+          child: TabBar(
+            controller: _tabController,
+            indicatorColor: const Color(0xFF2563EB),
+            labelColor: Colors.white,
+            unselectedLabelColor: const Color(0xFF94A3B8),
+            tabs: const [
+              Tab(text: 'Usuarios'),
+              Tab(text: 'Grupos'),
+            ],
+          ),
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _UsersTab(tabController: _tabController),
+              const GroupsPage(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────
+//  Users tab content
+// ─────────────────────────────────────────
+
+class _UsersTab extends ConsumerWidget {
+  const _UsersTab({required this.tabController});
+  final TabController? tabController;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -313,6 +382,10 @@ Color _roleColor(UserRole role) {
       return const Color(0xFF10B981);
     case UserRole.maintenance:
       return const Color(0xFFF59E0B);
+    case UserRole.owner:
+      return const Color(0xFFEA580C);
+    case UserRole.supervisor:
+      return const Color(0xFF0891B2);
   }
 }
 
@@ -326,5 +399,9 @@ String _roleLabel(UserRole role) {
       return 'Limpieza';
     case UserRole.maintenance:
       return 'Mantenimiento';
+    case UserRole.owner:
+      return 'Propietario';
+    case UserRole.supervisor:
+      return 'Supervisor';
   }
 }

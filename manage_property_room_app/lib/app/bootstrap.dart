@@ -7,6 +7,8 @@ import 'package:intl/date_symbol_data_local.dart';
 import '../data/sources/hive_repositories.dart';
 import '../data/seed_data.dart';
 import '../application/providers/repo_providers.dart';
+import '../core/notification_service.dart';
+import '../core/background_notif_service.dart';
 
 import 'theme.dart';
 import 'router.dart';
@@ -16,6 +18,10 @@ Future<void> bootstrap() async {
   await initializeDateFormatting('es', null);
   await Hive.initFlutter();
   await openHiveBoxes();
+
+  // Init notification services
+  await NotificationService.instance.init();
+  await BackgroundNotifService.instance.init();
 
   // Create a temporary container to seed data and set initial user
   final container = ProviderContainer();

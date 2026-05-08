@@ -46,7 +46,22 @@ func (h *UsersHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *UsersHandler) List(w http.ResponseWriter, r *http.Request) {
-	users, err := h.Store.Users().List(r.Context())
+	ctx := r.Context()
+	actorID := httpx.UserIDFrom(ctx)
+	actorRole := httpx.RoleFrom(ctx)
+	var users []domain.User
+	var err error
+	switch actorRole {
+	case domain.RoleOwner:
+		// Owner sees only the supervisors they created
+		users, err = h.Store.Users().ListCreatedBy(ctx, actorID, []domain.UserRole{domain.RoleSupervisor})
+	case domain.RoleSupervisor:
+		// Supervisor sees only the workers they created
+		users, err = h.Store.Users().ListCreatedBy(ctx, actorID, []domain.UserRole{domain.RoleCleaning, domain.RoleMaintenance})
+	default:
+		// Admin/operator see all
+		users, err = h.Store.Users().List(ctx)
+	}
 	if err != nil { httpx.HandleError(w, err); return }
 	httpx.WriteJSON(w, http.StatusOK, users)
 }
@@ -61,11 +76,13 @@ func (h *UsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil { httpx.HandleError(w, err); return }
+	actorID := httpx.UserIDFrom(r.Context())
 	u := &domain.User{
 		ID: uuid.NewString(),
 		Email: req.Email, PasswordHash: hash,
 		Name: req.Name, Initials: req.Initials,
 		Role: req.Role, MustChangePassword: false,
+		CreatedBy: actorID,
 		AssignedPropertyIDs: req.AssignedPropertyIDs,
 	}
 	if err := h.Store.Users().Create(r.Context(), u); err != nil {

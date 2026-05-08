@@ -255,6 +255,14 @@ func archiveCard(r *http.Request, s store.Store, c *domain.Card) error {
 	payload, _ := json.Marshal(c)
 	var pl map[string]any
 	_ = json.Unmarshal(payload, &pl)
+
+	// Enrich payload with actor info and source column title
+	pl["archivedByName"] = httpx.ActorNameFrom(r.Context())
+	pl["archivedById"] = httpx.UserIDFrom(r.Context())
+	if col, err := s.Columns().GetByID(r.Context(), c.ColumnID); err == nil {
+		pl["sourceColumnTitle"] = col.Title
+	}
+
 	return s.Archive().Create(r.Context(), &domain.ArchiveItem{
 		ID: uuid.NewString(), Kind: domain.ArchiveKindCard, Payload: pl,
 	})

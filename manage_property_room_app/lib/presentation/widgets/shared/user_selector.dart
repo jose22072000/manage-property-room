@@ -127,6 +127,10 @@ Color _roleColor(UserRole role) {
       return const Color(0xFF10B981);
     case UserRole.maintenance:
       return const Color(0xFFF59E0B);
+    case UserRole.owner:
+      return const Color(0xFF0891B2);
+    case UserRole.supervisor:
+      return const Color(0xFFD97706);
   }
 }
 
@@ -140,5 +144,9 @@ String _roleLabel(UserRole role) {
       return 'Limpieza';
     case UserRole.maintenance:
       return 'Mantenimiento';
+    case UserRole.owner:
+      return 'Propietario';
+    case UserRole.supervisor:
+      return 'Supervisor';
   }
 }

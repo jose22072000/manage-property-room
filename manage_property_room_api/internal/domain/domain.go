@@ -12,6 +12,8 @@ const (
 	RoleOperator    UserRole = "operator"
 	RoleCleaning    UserRole = "cleaning"
 	RoleMaintenance UserRole = "maintenance"
+	RoleOwner       UserRole = "owner"
+	RoleSupervisor  UserRole = "supervisor"
 )
 
 type CardKind string
@@ -84,21 +86,25 @@ type User struct {
 	Initials            string    `json:"initials" db:"initials"`
 	Role                UserRole  `json:"role" db:"role"`
 	MustChangePassword  bool      `json:"mustChangePassword" db:"must_change_password"`
+	CreatedBy           string    `json:"createdBy" db:"created_by"`
 	AssignedPropertyIDs []string  `json:"assignedPropertyIds" db:"-"`
 	CreatedAt           time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt           time.Time `json:"updatedAt" db:"updated_at"`
 }
 
 type Property struct {
-	ID         string    `json:"id" db:"id"`
-	Code       string    `json:"code" db:"code"`
-	Name       string    `json:"name" db:"name"`
-	TotalRooms int       `json:"totalRooms" db:"total_rooms"`
-	ColorSeed  int       `json:"colorSeed" db:"color_seed"`
-	Position   int       `json:"position" db:"position"`
-	Archived   bool      `json:"archived" db:"archived"`
-	CreatedAt  time.Time `json:"createdAt" db:"created_at"`
-	UpdatedAt  time.Time `json:"updatedAt" db:"updated_at"`
+	ID            string    `json:"id" db:"id"`
+	Code          string    `json:"code" db:"code"`
+	Name          string    `json:"name" db:"name"`
+	TotalRooms    int       `json:"totalRooms" db:"total_rooms"`
+	ColorSeed     int       `json:"colorSeed" db:"color_seed"`
+	Position      int       `json:"position" db:"position"`
+	Archived      bool      `json:"archived" db:"archived"`
+	OwnerUserID   string    `json:"ownerUserId" db:"owner_user_id"`
+	ImageURL      string    `json:"imageUrl" db:"image_url"`
+	SupervisorIDs []string  `json:"supervisorIds" db:"-"`
+	CreatedAt     time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt     time.Time `json:"updatedAt" db:"updated_at"`
 }
 
 type ColumnConfig struct {
@@ -195,12 +201,23 @@ type ArchiveItem struct {
 
 // AuditEvent records a mutation performed by a user.
 type AuditEvent struct {
-	ID        string    `json:"id" db:"id"`
-	ActorID   string    `json:"actorId" db:"actor_id"`
-	ActorName string    `json:"actorName" db:"actor_name"`
-	Action    string    `json:"action" db:"action"`
-	Entity    string    `json:"entity" db:"entity"`
-	EntityID  string    `json:"entityId" db:"entity_id"`
-	Detail    string    `json:"detail,omitempty" db:"detail"`
-	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+	ID         string    `json:"id" db:"id"`
+	ActorID    string    `json:"actorId" db:"actor_id"`
+	ActorName  string    `json:"actorName" db:"actor_name"`
+	Action     string    `json:"action" db:"action"`
+	Entity     string    `json:"entity" db:"entity"`
+	EntityID   string    `json:"entityId" db:"entity_id"`
+	Detail     string    `json:"detail,omitempty" db:"detail"`
+	PropertyID string    `json:"propertyId,omitempty" db:"property_id"`
+	CreatedAt  time.Time `json:"createdAt" db:"created_at"`
+}
+
+// Group is a named collection of users that can be assigned to properties.
+type Group struct {
+	ID          string    `json:"id" db:"id"`
+	Name        string    `json:"name" db:"name"`
+	UserIDs     []string  `json:"userIds" db:"-"`
+	PropertyIDs []string  `json:"propertyIds" db:"-"`
+	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt   time.Time `json:"updatedAt" db:"updated_at"`
 }

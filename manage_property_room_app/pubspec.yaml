@@ -39,6 +39,12 @@ dependencies:
   # Image picker (web file + mobile camera/gallery)
   image_picker: ^1.1.2
 
+  # System notifications (sound + vibration in background)
+  flutter_local_notifications: ^18.0.1
+
+  # Background task scheduler (Android background polling)
+  workmanager: ^0.5.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

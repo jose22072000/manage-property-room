@@ -32,6 +32,8 @@ type Store struct {
 	activity   *activityRepo
 	archive    *archiveRepo
 	audit      *auditRepo
+	groups     *groupRepo
+	propertySupervisors *propertySupervisorRepo
 }
 
 // Open opens a SQLite DB at dsn (file path or ":memory:"), applies pragmas,
@@ -65,6 +67,8 @@ func Open(dsn string) (*Store, error) {
 	s.activity = &activityRepo{db: db}
 	s.archive = &archiveRepo{db: db}
 	s.audit = &auditRepo{db: db}
+	s.groups = &groupRepo{db: db}
+	s.propertySupervisors = &propertySupervisorRepo{db: db}
 	return s, nil
 }
 
@@ -97,3 +101,5 @@ func (s *Store) Comments() store.CommentRepo    { return s.comments }
 func (s *Store) Activity() store.ActivityRepo   { return s.activity }
 func (s *Store) Archive() store.ArchiveRepo     { return s.archive }
 func (s *Store) Audit() store.AuditRepo         { return s.audit }
+func (s *Store) Groups() store.GroupRepo        { return s.groups }
+func (s *Store) PropertySupervisors() store.PropertySupervisorRepo { return s.propertySupervisors }

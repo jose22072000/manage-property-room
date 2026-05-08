@@ -72,7 +72,7 @@ func (h *CardsHandler) CreateForColumn(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Cards().Create(r.Context(), c); err != nil {
 		httpx.HandleError(w, err); return
 	}
-	recordAudit(r.Context(), h.Store, "create", "card", c.ID, c.Title)
+	recordAudit(r.Context(), h.Store, "create", "card", c.ID, c.Title, c.PropertyID)
 	httpx.WriteJSON(w, http.StatusCreated, c)
 }
 
@@ -107,7 +107,7 @@ func (h *CardsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Cards().Update(r.Context(), c); err != nil {
 		httpx.HandleError(w, err); return
 	}
-	recordAudit(r.Context(), h.Store, "update", "card", c.ID, c.Title)
+	recordAudit(r.Context(), h.Store, "update", "card", c.ID, c.Title, c.PropertyID)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -136,7 +136,7 @@ func (h *CardsHandler) Move(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := h.Store.Cards().GetByID(r.Context(), id)
 	if err != nil { httpx.HandleError(w, err); return }
-	recordAudit(r.Context(), h.Store, "move", "card", id, c.Title)
+	recordAudit(r.Context(), h.Store, "move", "card", id, c.Title, c.PropertyID)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -150,7 +150,7 @@ func (h *CardsHandler) ToggleDone(w http.ResponseWriter, r *http.Request) {
 	}
 	status := "pendiente"
 	if c.IsDone { status = "completada" }
-	recordAudit(r.Context(), h.Store, "update", "card", c.ID, c.Title+" → "+status)
+	recordAudit(r.Context(), h.Store, "update", "card", c.ID, c.Title+" → "+status, c.PropertyID)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -161,7 +161,7 @@ func (h *CardsHandler) Archive(w http.ResponseWriter, r *http.Request) {
 	if err := archiveCard(r, h.Store, c); err != nil {
 		httpx.HandleError(w, err); return
 	}
-	recordAudit(r.Context(), h.Store, "archive", "card", c.ID, c.Title)
+	recordAudit(r.Context(), h.Store, "archive", "card", c.ID, c.Title, c.PropertyID)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 

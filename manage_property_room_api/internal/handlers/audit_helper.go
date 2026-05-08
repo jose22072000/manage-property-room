@@ -12,9 +12,11 @@ import (
 )
 
 // recordAudit writes an audit event in the background (non-blocking, best-effort).
-func recordAudit(ctx context.Context, s store.Store, action, entity, entityID, detail string) {
+func recordAudit(ctx context.Context, s store.Store, action, entity, entityID, detail string, propertyID ...string) {
 	actorID := httpx.UserIDFrom(ctx)
 	actorName := httpx.ActorNameFrom(ctx)
+	pid := ""
+	if len(propertyID) > 0 { pid = propertyID[0] }
 
 	// Detach context so the goroutine isn't cancelled when the request ends.
 	go func() {
@@ -25,14 +27,15 @@ func recordAudit(ctx context.Context, s store.Store, action, entity, entityID, d
 			}
 		}
 		_ = s.Audit().Create(context.Background(), &domain.AuditEvent{
-			ID:        uuid.NewString(),
-			ActorID:   actorID,
-			ActorName: actorName,
-			Action:    action,
-			Entity:    entity,
-			EntityID:  entityID,
-			Detail:    detail,
-			CreatedAt: time.Now().UTC(),
+			ID:         uuid.NewString(),
+			ActorID:    actorID,
+			ActorName:  actorName,
+			Action:     action,
+			Entity:     entity,
+			EntityID:   entityID,
+			Detail:     detail,
+			PropertyID: pid,
+			CreatedAt:  time.Now().UTC(),
 		})
 	}()
 }

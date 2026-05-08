@@ -2,6 +2,7 @@ package router
 
 import (
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -50,6 +51,17 @@ func New(d Deps) http.Handler {
 	activityH := &handlers.ActivityHandler{Store: d.Store}
 	archiveH := &handlers.ArchiveHandler{Store: d.Store}
 	auditH := &handlers.AuditHandler{Store: d.Store}
+	groupsH := &handlers.GroupsHandler{Store: d.Store}
+
+	uploadDir := "/data/uploads"
+	baseURL := os.Getenv("BASE_URL")
+	if baseURL == "" { baseURL = "http://localhost:8080" }
+	uploadH := &handlers.UploadHandler{UploadDir: uploadDir, BaseURL: baseURL}
+
+	// Static file serving (property images)
+	r.Get("/static/*", func(w http.ResponseWriter, req *http.Request) {
+		http.StripPrefix("/static/", http.FileServer(http.Dir(uploadDir))).ServeHTTP(w, req)
+	})
 
 	// Public
 	r.Get("/health", handlers.Health)
@@ -65,11 +77,21 @@ func New(d Deps) http.Handler {
 
 		r.Get("/me", usersH.Me)
 
-		// Users (admin only)
+		// File upload (admin/owner only)
 		r.Group(func(r chi.Router) {
-			r.Use(httpx.RequireRole(domain.RoleAdmin))
+			r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleOwner))
+			r.Post("/upload", uploadH.Upload)
+		})
+
+		// Users — admin sees/manages all; owner creates supervisors; supervisor creates workers
+		r.Group(func(r chi.Router) {
+			r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleOwner, domain.RoleSupervisor))
 			r.Get("/users", usersH.List)
 			r.Post("/users", usersH.Create)
+		})
+		r.Group(func(r chi.Router) {
+			// Only admin can update/delete/reset any user
+			r.Use(httpx.RequireRole(domain.RoleAdmin))
 			r.Patch("/users/{id}", usersH.Update)
 			r.Delete("/users/{id}", usersH.Delete)
 			r.Post("/users/{id}/reset-password", usersH.ResetPassword)
@@ -80,13 +102,19 @@ func New(d Deps) http.Handler {
 		r.Get("/properties/{id}", propsH.Get)
 		r.Get("/properties/{id}/board", propsH.Board)
 		r.Get("/properties/{id}/workers", propsH.Workers)
+		r.Get("/properties/{id}/supervisors", propsH.GetSupervisors)
 		r.Group(func(r chi.Router) {
-			r.Use(httpx.RequireRole(domain.RoleAdmin))
+			// Admin or owner can create/update/delete their properties
+			r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleOwner))
 			r.Post("/properties", propsH.Create)
 			r.Patch("/properties/{id}", propsH.Update)
 			r.Delete("/properties/{id}", propsH.Delete)
 			r.Post("/properties/{id}/assign-workers", propsH.AssignWorkers)
-		})
+			r.Post("/properties/{id}/assign-supervisors", propsH.AssignSupervisors)			})
+			r.Group(func(r chi.Router) {
+				// Only admin can reassign property ownership
+				r.Use(httpx.RequireRole(domain.RoleAdmin))
+				r.Post("/properties/{id}/assign-owner", propsH.AssignOwner)		})
 
 		// Columns — structure mutations require admin or operator
 		r.Group(func(r chi.Router) {
@@ -134,10 +162,22 @@ func New(d Deps) http.Handler {
 		r.Post("/archive/{id}/restore", archiveH.Restore)
 		r.Delete("/archive/{id}", archiveH.Delete)
 
-		// Audit (admin only)
-		r.Group(func(r chi.Router) {
-			r.Use(httpx.RequireRole(domain.RoleAdmin))
+// Audit / Notifications — admin sees all, owner sees their properties
+			r.Group(func(r chi.Router) {
+				r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleOwner))
 			r.Get("/audit", auditH.List)
+		})
+
+		// Groups (admin, supervisor only — owner does not manage groups)
+		r.Group(func(r chi.Router) {
+			r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleSupervisor))
+			r.Get("/groups", groupsH.List)
+			r.Post("/groups", groupsH.Create)
+			r.Get("/groups/{id}", groupsH.Get)
+			r.Patch("/groups/{id}", groupsH.Update)
+			r.Delete("/groups/{id}", groupsH.Delete)
+			r.Put("/groups/{id}/users", groupsH.SetUsers)
+			r.Put("/groups/{id}/properties", groupsH.SetProperties)
 		})
 	})
 

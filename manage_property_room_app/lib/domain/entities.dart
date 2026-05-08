@@ -11,6 +11,7 @@ class AppUser {
     required this.initials,
     required this.role,
     this.assignedPropertyIds = const [],
+    this.createdBy,
   });
 
   final String id;
@@ -18,6 +19,7 @@ class AppUser {
   final String initials;
   final UserRole role;
   final List<String> assignedPropertyIds;
+  final String? createdBy;
 
   AppUser copyWith({
     String? id,
@@ -25,6 +27,7 @@ class AppUser {
     String? initials,
     UserRole? role,
     List<String>? assignedPropertyIds,
+    String? createdBy,
   }) =>
       AppUser(
         id: id ?? this.id,
@@ -32,6 +35,7 @@ class AppUser {
         initials: initials ?? this.initials,
         role: role ?? this.role,
         assignedPropertyIds: assignedPropertyIds ?? this.assignedPropertyIds,
+        createdBy: createdBy ?? this.createdBy,
       );
 
   Map<String, dynamic> toJson() => {
@@ -48,6 +52,7 @@ class AppUser {
         initials: j['initials'] as String,
         role: UserRole.values.byName(j['role'] as String),
         assignedPropertyIds: List<String>.from(j['assignedPropertyIds'] as List? ?? []),
+        createdBy: j['createdBy'] as String?,
       );
 
   @override
@@ -68,6 +73,9 @@ class Property {
     required this.name,
     required this.totalRooms,
     this.colorSeed = 0,
+    this.ownerUserId,
+    this.imageUrl,
+    this.supervisorIds = const [],
   });
 
   final String id;
@@ -76,6 +84,9 @@ class Property {
   final int totalRooms;
   /// Seed for deterministic gradient (0-9).
   final int colorSeed;
+  final String? ownerUserId;
+  final String? imageUrl;
+  final List<String> supervisorIds;
 
   Property copyWith({
     String? id,
@@ -83,6 +94,9 @@ class Property {
     String? name,
     int? totalRooms,
     int? colorSeed,
+    String? ownerUserId,
+    String? imageUrl,
+    List<String>? supervisorIds,
   }) =>
       Property(
         id: id ?? this.id,
@@ -90,6 +104,9 @@ class Property {
         name: name ?? this.name,
         totalRooms: totalRooms ?? this.totalRooms,
         colorSeed: colorSeed ?? this.colorSeed,
+        ownerUserId: ownerUserId ?? this.ownerUserId,
+        imageUrl: imageUrl ?? this.imageUrl,
+        supervisorIds: supervisorIds ?? this.supervisorIds,
       );
 
   Map<String, dynamic> toJson() => {
@@ -98,6 +115,8 @@ class Property {
         'name': name,
         'totalRooms': totalRooms,
         'colorSeed': colorSeed,
+        if (ownerUserId != null) 'ownerId': ownerUserId,
+        if (imageUrl != null && imageUrl!.isNotEmpty) 'imageUrl': imageUrl,
       };
 
   factory Property.fromJson(Map<String, dynamic> j) => Property(
@@ -106,6 +125,9 @@ class Property {
         name: j['name'] as String,
         totalRooms: j['totalRooms'] as int? ?? 0,
         colorSeed: j['colorSeed'] as int? ?? 0,
+        ownerUserId: j['ownerUserId'] as String?,
+        imageUrl: j['imageUrl'] as String?,
+        supervisorIds: List<String>.from(j['supervisorIds'] as List? ?? []),
       );
 
   @override
@@ -522,11 +544,13 @@ class ArchivedCard extends BoardCard {
     required super.createdAt,
     required this.archivedAt,
     this.archivedById,
+    this.archivedByName = '',
     this.sourceColumnTitle = '',
   });
 
   final DateTime archivedAt;
   final String? archivedById;
+  final String archivedByName;
   final String sourceColumnTitle;
 
   factory ArchivedCard.fromCard(
@@ -610,7 +634,9 @@ class ArchivedCard extends BoardCard {
           ? DateTime.parse(payload['createdAt'] as String)
           : archivedAt,
       archivedAt: archivedAt,
-      sourceColumnTitle: '',
+      archivedByName: payload['archivedByName'] as String? ?? '',
+      archivedById: payload['archivedById'] as String?,
+      sourceColumnTitle: payload['sourceColumnTitle'] as String? ?? '',
     );
   }
 }
@@ -734,6 +760,7 @@ class AuditEvent {
     required this.entityId,
     required this.detail,
     required this.createdAt,
+    this.propertyId,
   });
 
   final String id;
@@ -743,6 +770,7 @@ class AuditEvent {
   final String entity;
   final String entityId;
   final String detail;
+  final String? propertyId;
   final DateTime createdAt;
 
   factory AuditEvent.fromJson(Map<String, dynamic> j) => AuditEvent(
@@ -753,11 +781,58 @@ class AuditEvent {
         entity: j['entity'] as String,
         entityId: j['entityId'] as String,
         detail: (j['detail'] as String?) ?? '',
+        propertyId: j['propertyId'] as String?,
         createdAt: DateTime.parse(j['createdAt'] as String),
       );
 
   @override
   bool operator ==(Object other) => other is AuditEvent && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
+}
+
+// ─────────────────────────────────────────
+//  Group
+// ─────────────────────────────────────────
+
+class Group {
+  const Group({
+    required this.id,
+    required this.name,
+    required this.userIds,
+    required this.propertyIds,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String name;
+  final List<String> userIds;
+  final List<String> propertyIds;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory Group.fromJson(Map<String, dynamic> j) => Group(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        userIds: (j['userIds'] as List<dynamic>?)?.cast<String>() ?? [],
+        propertyIds: (j['propertyIds'] as List<dynamic>?)?.cast<String>() ?? [],
+        createdAt: DateTime.parse(j['createdAt'] as String),
+        updatedAt: DateTime.parse(j['updatedAt'] as String),
+      );
+
+  Group copyWith({String? name, List<String>? userIds, List<String>? propertyIds}) => Group(
+        id: id,
+        name: name ?? this.name,
+        userIds: userIds ?? this.userIds,
+        propertyIds: propertyIds ?? this.propertyIds,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+      );
+
+  @override
+  bool operator ==(Object other) => other is Group && other.id == id;
 
   @override
   int get hashCode => id.hashCode;

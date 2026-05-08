@@ -21,11 +21,26 @@ type propertyRequest struct {
 	TotalRooms int    `json:"totalRooms"`
 	ColorSeed  int    `json:"colorSeed"`
 	Position   int    `json:"position"`
+	ImageURL   string `json:"imageUrl"`
+	OwnerID    string `json:"ownerId"`
 }
 
 func (h *PropertiesHandler) List(w http.ResponseWriter, r *http.Request) {
-	items, err := h.Store.Properties().List(r.Context())
+	ctx := r.Context()
+	actorID := httpx.UserIDFrom(ctx)
+	actorRole := httpx.RoleFrom(ctx)
+	var items []domain.Property
+	var err error
+	switch actorRole {
+	case domain.RoleOwner:
+		items, err = h.Store.Properties().ListByOwner(ctx, actorID)
+	case domain.RoleSupervisor:
+		items, err = h.Store.Properties().ListBySupervisor(ctx, actorID)
+	default:
+		items, err = h.Store.Properties().List(ctx)
+	}
 	if err != nil { httpx.HandleError(w, err); return }
+	if items == nil { items = []domain.Property{} }
 	httpx.WriteJSON(w, http.StatusOK, items)
 }
 
@@ -48,6 +63,12 @@ func (h *PropertiesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ID: uuid.NewString(),
 		Code: req.Code, Name: req.Name,
 		TotalRooms: req.TotalRooms, ColorSeed: req.ColorSeed, Position: req.Position,
+		ImageURL: req.ImageURL,
+	}
+	if httpx.RoleFrom(r.Context()) == domain.RoleOwner {
+		p.OwnerUserID = httpx.UserIDFrom(r.Context())
+	} else if req.OwnerID != "" {
+		p.OwnerUserID = req.OwnerID
 	}
 	if err := h.Store.Properties().Create(r.Context(), p); err != nil {
 		httpx.HandleError(w, err); return
@@ -69,6 +90,8 @@ func (h *PropertiesHandler) Update(w http.ResponseWriter, r *http.Request) {
 	p.TotalRooms = req.TotalRooms
 	p.ColorSeed = req.ColorSeed
 	p.Position = req.Position
+	if req.ImageURL != "" { p.ImageURL = req.ImageURL }
+	if req.OwnerID != "" { p.OwnerUserID = req.OwnerID }
 	if err := h.Store.Properties().Update(r.Context(), p); err != nil {
 		httpx.HandleError(w, err); return
 	}
@@ -152,4 +175,52 @@ func (h *PropertiesHandler) Board(w http.ResponseWriter, r *http.Request) {
 func contains(s []string, v string) bool {
 	for _, x := range s { if x == v { return true } }
 	return false
+}
+
+type assignSupervisorsRequest struct {
+	SupervisorIDs []string `json:"supervisorIds"`
+}
+
+// AssignSupervisors replaces the supervisor set for a property.
+func (h *PropertiesHandler) AssignSupervisors(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req assignSupervisorsRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error()); return
+	}
+	if err := h.Store.PropertySupervisors().SetSupervisors(r.Context(), id, req.SupervisorIDs); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	// For each supervisor, also update their ListBySupervisor so they can see the property.
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// GetSupervisors returns the list of supervisor IDs assigned to a property.
+func (h *PropertiesHandler) GetSupervisors(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ids, err := h.Store.PropertySupervisors().ListForProperty(r.Context(), id)
+	if err != nil { httpx.HandleError(w, err); return }
+	if ids == nil { ids = []string{} }
+	httpx.WriteJSON(w, http.StatusOK, ids)
+}
+
+type assignOwnerRequest struct {
+	OwnerID string `json:"ownerId"`
+}
+
+// AssignOwner sets (or clears) the owner of a property. Admin-only.
+func (h *PropertiesHandler) AssignOwner(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req assignOwnerRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error()); return
+	}
+	p, err := h.Store.Properties().GetByID(r.Context(), id)
+	if err != nil { httpx.HandleError(w, err); return }
+	p.OwnerUserID = req.OwnerID
+	if err := h.Store.Properties().Update(r.Context(), p); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	recordAudit(r.Context(), h.Store, "assign-owner", "property", p.ID, p.Name)
+	httpx.WriteJSON(w, http.StatusOK, p)
 }

@@ -11,7 +11,10 @@ class Policy {
 
   /// Whether [user] can see [propertyId] in the properties list / board.
   static bool canSeeProperty(AppUser user, String propertyId) {
-    if (user.role == UserRole.admin || user.role == UserRole.operator) return true;
+    if (user.role == UserRole.admin ||
+        user.role == UserRole.operator ||
+        user.role == UserRole.owner ||
+        user.role == UserRole.supervisor) return true;
     return user.assignedPropertyIds.contains(propertyId);
   }
 
@@ -24,6 +27,8 @@ class Policy {
 
     switch (user.role) {
       case UserRole.operator:
+      case UserRole.owner:
+      case UserRole.supervisor:
         return _operatorCanBoard(action);
       case UserRole.cleaning:
       case UserRole.maintenance:
@@ -80,6 +85,8 @@ class Policy {
 
     switch (user.role) {
       case UserRole.operator:
+      case UserRole.owner:
+      case UserRole.supervisor:
         return _operatorCanCard(card, action);
       case UserRole.cleaning:
         return _cleaningCanCard(user, card, action);
@@ -148,6 +155,35 @@ class Policy {
       case CardAction.delete:
         return false;
     }
+  }
+
+  static bool canManageGroups(AppUser user) {
+    // Only admin and supervisor manage groups; owner does not
+    return user.role == UserRole.admin || user.role == UserRole.supervisor;
+  }
+
+  /// Whether [user] can see the Users/Groups management page.
+  static bool canSeeUserManagement(AppUser user) {
+    return user.role == UserRole.admin ||
+        user.role == UserRole.owner ||
+        user.role == UserRole.supervisor;
+  }
+
+  /// Whether [user] can create properties.
+  static bool canCreateProperty(AppUser user) {
+    return user.role == UserRole.admin || user.role == UserRole.owner;
+  }
+
+  /// Whether [user] can see the Notifications page (audit events).
+  static bool canSeeNotifications(AppUser user) {
+    return user.role == UserRole.admin || user.role == UserRole.owner;
+  }
+
+  /// Whether [user] can assign supervisors to a property.
+  static bool canAssignSupervisors(AppUser user, Property property) {
+    if (user.role == UserRole.admin) return true;
+    if (user.role == UserRole.owner && property.ownerUserId == user.id) return true;
+    return false;
   }
 
   // ─────────────────────────────────────────

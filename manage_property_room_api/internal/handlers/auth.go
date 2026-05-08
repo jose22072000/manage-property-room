@@ -61,7 +61,18 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	// Stateless JWT — client discards token. Endpoint provided for API symmetry.
+	// Stateless JWT — client discards token. Record audit event for session tracking.
+	uid := httpx.UserIDFrom(r.Context())
+	actorName := httpx.ActorNameFrom(r.Context())
+	if uid != "" {
+		go func() {
+			_ = h.Store.Audit().Create(context.Background(), &domain.AuditEvent{
+				ID: uuid.NewString(), ActorID: uid, ActorName: actorName,
+				Action: "logout", Entity: "user", EntityID: uid,
+				Detail: "", CreatedAt: time.Now().UTC(),
+			})
+		}()
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

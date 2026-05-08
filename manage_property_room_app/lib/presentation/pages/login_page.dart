@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../application/notifiers/notifiers.dart';
 import '../../application/providers/api_providers.dart';
 import '../../application/providers/repo_providers.dart';
+import '../../core/background_notif_service.dart';
 import '../../core/errors.dart';
 import '../../data/remote/api_client.dart';
 import '../../domain/domain.dart';
@@ -60,6 +61,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       final token = ref.read(apiClientProvider).session.token;
       if (token != null && token.isNotEmpty) {
         await ref.read(settingsRepoProvider).saveToken(token);
+        // Schedule background notification polling
+        final baseUrl = ref.read(apiClientProvider).baseUrl;
+        await _scheduleBackgroundNotifs(baseUrl, token);
       }
 
       // 5. Set as current user (stores id in settings + updates state)
@@ -251,5 +255,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ),
       ),
     );
+  }
+}
+Future<void> _scheduleBackgroundNotifs(String baseUrl, String token) async {
+  try {
+    await BackgroundNotifService.instance.schedule(
+      baseUrl: baseUrl,
+      token: token,
+    );
+  } catch (_) {
+    // Non-fatal — background polling is best-effort
   }
 }

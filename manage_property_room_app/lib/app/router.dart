@@ -9,8 +9,10 @@ import '../presentation/pages/board_page.dart';
 import '../presentation/pages/todo_page.dart';
 import '../presentation/pages/archive_page.dart';
 import '../presentation/pages/audit_page.dart';
+import '../presentation/pages/notifications_page.dart';
 import '../presentation/pages/settings_page.dart';
 import '../presentation/pages/users_page.dart';
+import '../presentation/pages/groups_page.dart';
 import '../presentation/pages/api_debug_page.dart';
 import '../presentation/pages/login_page.dart';
 import '../presentation/widgets/shared/app_shell.dart';
@@ -51,9 +53,16 @@ GoRouter buildRouter(WidgetRef ref) {
       // Admin-only pages
       if (user != null) {
         final isAdminOnly = state.matchedLocation.startsWith('/settings') ||
-            state.matchedLocation.startsWith('/users') ||
             state.matchedLocation.startsWith('/audit');
+        final isNotifications = state.matchedLocation.startsWith('/notifications');
+        final isUserMgmt = state.matchedLocation.startsWith('/users');
         if (isAdminOnly && !Policy.canBoard(user, BoardAction.manageUsers)) {
+          return '/';
+        }
+        if (isNotifications && !Policy.canSeeNotifications(user)) {
+          return '/';
+        }
+        if (isUserMgmt && !Policy.canSeeUserManagement(user)) {
           return '/';
         }
       }
@@ -89,12 +98,20 @@ GoRouter buildRouter(WidgetRef ref) {
             pageBuilder: (_, state) => const NoTransitionPage(child: AuditPage()),
           ),
           GoRoute(
+            path: '/notifications',
+            pageBuilder: (_, state) => const NoTransitionPage(child: NotificationsPage()),
+          ),
+          GoRoute(
             path: '/settings',
             pageBuilder: (_, state) => const NoTransitionPage(child: SettingsPage()),
           ),
           GoRoute(
             path: '/users',
             pageBuilder: (_, state) => const NoTransitionPage(child: UsersPage()),
+          ),
+          GoRoute(
+            path: '/groups',
+            pageBuilder: (_, state) => const NoTransitionPage(child: GroupsPage()),
           ),
           GoRoute(
             path: '/api-debug',

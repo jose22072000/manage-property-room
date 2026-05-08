@@ -150,9 +150,19 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                 );
               }
               if (isMobile) {
-                return _MobileBoard(state: state, propertyId: widget.propertyId, user: user);
+                return _MobileBoard(
+                  state: state,
+                  propertyId: widget.propertyId,
+                  user: user,
+                  highlightCardId: widget.highlightCardId,
+                );
               }
-              return _DesktopBoard(state: state, propertyId: widget.propertyId, user: user);
+              return _DesktopBoard(
+                state: state,
+                propertyId: widget.propertyId,
+                user: user,
+                highlightCardId: widget.highlightCardId,
+              );
             },
           ),
         ),
@@ -183,18 +193,49 @@ class _BoardPageState extends ConsumerState<BoardPage> {
 // ─────────────────────────────────────────
 
 class _MobileBoard extends StatefulWidget {
-  const _MobileBoard({required this.state, required this.propertyId, required this.user});
+  const _MobileBoard({
+    required this.state,
+    required this.propertyId,
+    required this.user,
+    this.highlightCardId,
+  });
 
   final BoardState state;
   final String propertyId;
   final AppUser? user;
+  final String? highlightCardId;
 
   @override
   State<_MobileBoard> createState() => _MobileBoardState();
 }
 
 class _MobileBoardState extends State<_MobileBoard> {
+  late PageController _pageController;
   int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    int initialPage = 0;
+    if (widget.highlightCardId != null) {
+      final columns = widget.state.columns;
+      for (int i = 0; i < columns.length; i++) {
+        final cards = widget.state.cardsByColumn[columns[i].id] ?? [];
+        if (cards.any((c) => c.id == widget.highlightCardId)) {
+          initialPage = i;
+          break;
+        }
+      }
+    }
+    _page = initialPage;
+    _pageController = PageController(initialPage: initialPage);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -249,6 +290,7 @@ class _MobileBoardState extends State<_MobileBoard> {
         // PageView of columns
         Expanded(
           child: PageView.builder(
+            controller: _pageController,
             itemCount: columns.length,
             onPageChanged: (i) => setState(() => _page = i),
             itemBuilder: (_, i) {
@@ -277,11 +319,17 @@ class _MobileBoardState extends State<_MobileBoard> {
 // ─────────────────────────────────────────
 
 class _DesktopBoard extends ConsumerStatefulWidget {
-  const _DesktopBoard({required this.state, required this.propertyId, required this.user});
+  const _DesktopBoard({
+    required this.state,
+    required this.propertyId,
+    required this.user,
+    this.highlightCardId,
+  });
 
   final BoardState state;
   final String propertyId;
   final AppUser? user;
+  final String? highlightCardId;
 
   @override
   ConsumerState<_DesktopBoard> createState() => _DesktopBoardState();
@@ -290,6 +338,38 @@ class _DesktopBoard extends ConsumerStatefulWidget {
 class _DesktopBoardState extends ConsumerState<_DesktopBoard> {
   // Index of column that is currently being hovered by a dragged column
   int? _hoverTargetIndex;
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.highlightCardId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final columns = widget.state.columns;
+        for (int i = 0; i < columns.length; i++) {
+          final cards = widget.state.cardsByColumn[columns[i].id] ?? [];
+          if (cards.any((c) => c.id == widget.highlightCardId)) {
+            // Each column is ~292px (280 width + 12 margin)
+            const columnWidth = 292.0;
+            final offset = (i * columnWidth).clamp(
+                0.0, _scrollController.position.maxScrollExtent);
+            _scrollController.animateTo(
+              offset,
+              duration: const Duration(milliseconds: 350),
+              curve: Curves.easeInOut,
+            );
+            break;
+          }
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -298,6 +378,7 @@ class _DesktopBoardState extends ConsumerState<_DesktopBoard> {
         Policy.canBoard(widget.user!, BoardAction.moveColumn);
 
     return SingleChildScrollView(
+      controller: _scrollController,
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.all(16),
       child: IntrinsicHeight(

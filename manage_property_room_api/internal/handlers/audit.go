@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/jose/manage_property_room_api/internal/domain"
 	"github.com/jose/manage_property_room_api/internal/httpx"
 	"github.com/jose/manage_property_room_api/internal/store"
 )
@@ -13,13 +14,35 @@ type AuditHandler struct {
 }
 
 func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
-	limit := 200
+	ctx := r.Context()
+	actorID := httpx.UserIDFrom(ctx)
+	actorRole := httpx.RoleFrom(ctx)
+
+	limit := 500
 	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 1000 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 2000 {
 			limit = n
 		}
 	}
-	events, err := h.Store.Audit().List(r.Context(), limit)
+
+	var events []domain.AuditEvent
+	var err error
+
+	switch actorRole {
+	case domain.RoleAdmin:
+		events, err = h.Store.Audit().List(ctx, limit)
+	case domain.RoleOwner:
+		// Owner sees only events from their properties
+		props, propErr := h.Store.Properties().ListByOwner(ctx, actorID)
+		if propErr != nil { httpx.HandleError(w, propErr); return }
+		ids := make([]string, 0, len(props))
+		for _, p := range props { ids = append(ids, p.ID) }
+		events, err = h.Store.Audit().ListByPropertyIDs(ctx, ids, limit)
+	default:
+		httpx.WriteError(w, http.StatusForbidden, "FORBIDDEN", "access denied")
+		return
+	}
 	if err != nil { httpx.HandleError(w, err); return }
+	if events == nil { events = []domain.AuditEvent{} }
 	httpx.WriteJSON(w, http.StatusOK, events)
 }

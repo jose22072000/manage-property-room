@@ -19,6 +19,8 @@ type Store interface {
 	Activity() ActivityRepo
 	Archive() ArchiveRepo
 	Audit() AuditRepo
+	Groups() GroupRepo
+	PropertySupervisors() PropertySupervisorRepo
 	Close() error
 }
 
@@ -27,6 +29,7 @@ type UserRepo interface {
 	GetByID(ctx context.Context, id string) (*domain.User, error)
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	List(ctx context.Context) ([]domain.User, error)
+	ListCreatedBy(ctx context.Context, creatorID string, roles []domain.UserRole) ([]domain.User, error)
 	Update(ctx context.Context, u *domain.User) error
 	Delete(ctx context.Context, id string) error
 	SetAssignedProperties(ctx context.Context, userID string, propertyIDs []string) error
@@ -38,6 +41,8 @@ type PropertyRepo interface {
 	Create(ctx context.Context, p *domain.Property) error
 	GetByID(ctx context.Context, id string) (*domain.Property, error)
 	List(ctx context.Context) ([]domain.Property, error)
+	ListByOwner(ctx context.Context, ownerID string) ([]domain.Property, error)
+	ListBySupervisor(ctx context.Context, supervisorID string) ([]domain.Property, error)
 	Update(ctx context.Context, p *domain.Property) error
 	Delete(ctx context.Context, id string) error
 }
@@ -92,4 +97,23 @@ type ArchiveRepo interface {
 type AuditRepo interface {
 	Create(ctx context.Context, e *domain.AuditEvent) error
 	List(ctx context.Context, limit int) ([]domain.AuditEvent, error)
+	ListByPropertyIDs(ctx context.Context, propertyIDs []string, limit int) ([]domain.AuditEvent, error)
+}
+
+type GroupRepo interface {
+	Create(ctx context.Context, g *domain.Group) error
+	GetByID(ctx context.Context, id string) (*domain.Group, error)
+	List(ctx context.Context) ([]domain.Group, error)
+	Update(ctx context.Context, g *domain.Group) error
+	Delete(ctx context.Context, id string) error
+	SetUsers(ctx context.Context, groupID string, userIDs []string) error
+	SetProperties(ctx context.Context, groupID string, propertyIDs []string) error
+	ListPropertiesForUser(ctx context.Context, userID string) ([]string, error)
+	ListForSupervisor(ctx context.Context, supervisorID string) ([]domain.Group, error)
+}
+
+type PropertySupervisorRepo interface {
+	SetSupervisors(ctx context.Context, propertyID string, supervisorIDs []string) error
+	ListForProperty(ctx context.Context, propertyID string) ([]string, error)
+	ListPropertiesForSupervisor(ctx context.Context, supervisorID string) ([]string, error)
 }
