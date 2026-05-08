@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../application/notifiers/notifiers.dart';
 import '../../application/providers/api_providers.dart';
 import '../../application/providers/repo_providers.dart';
+import '../../core/errors.dart';
 import '../../data/remote/api_client.dart';
 import '../../domain/domain.dart';
 
@@ -68,12 +69,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (mounted) context.go('/');
     } on ApiException catch (e) {
       setState(() {
-        _error = e.message;
+        _error = friendlyError(e);
         _busy = false;
       });
     } catch (e) {
       setState(() {
-        _error = e.toString();
+        _error = friendlyError(e);
         _busy = false;
       });
     }

@@ -76,6 +76,7 @@ class ConfirmDialog {
         context: context,
         useSafeArea: true,
         showDragHandle: true,
+        useRootNavigator: true,
         builder: (ctx) => SafeArea(child: buildContent(ctx)),
       );
     } else {

@@ -20,6 +20,7 @@ class ColumnActionsMenu extends ConsumerStatefulWidget {
     required this.onClose,
     required this.onAddCard,
     required this.onOpenConfig,
+    this.inSheet = false,
   });
 
   final BoardColumn column;
@@ -28,6 +29,7 @@ class ColumnActionsMenu extends ConsumerStatefulWidget {
   final VoidCallback onClose;
   final VoidCallback onAddCard;
   final VoidCallback onOpenConfig;
+  final bool inSheet;
 
   @override
   ConsumerState<ColumnActionsMenu> createState() => _ColumnActionsMenuState();
@@ -64,16 +66,17 @@ class _ColumnActionsMenuState extends ConsumerState<ColumnActionsMenu> {
     final otherProps = allProps.where((p) => p.id != widget.propertyId).toList();
 
     return Container(
-      width: 280,
       padding: const EdgeInsets.symmetric(vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(color: Color(0x1A000000), blurRadius: 16, offset: Offset(0, 4)),
-        ],
-      ),
+      decoration: widget.inSheet
+          ? null
+          : BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: const [
+                BoxShadow(color: Color(0x1A000000), blurRadius: 16, offset: Offset(0, 4)),
+              ],
+            ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -122,7 +125,7 @@ class _ColumnActionsMenuState extends ConsumerState<ColumnActionsMenu> {
           _MenuItem(
             label: 'Configurar lista',
             icon: Icons.tune,
-            onTap: () { widget.onOpenConfig(); widget.onClose(); },
+            onTap: widget.onOpenConfig,
           ),
 
           _MenuItem(
@@ -332,29 +335,38 @@ class ColumnMenuButton extends StatefulWidget {
 class _ColumnMenuButtonState extends State<ColumnMenuButton> {
   void _open() {
     if (isMobileSize(context)) {
-      showModalBottomSheet(
+    var _configAfter = false;
+    showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
         showDragHandle: true,
+        enableDrag: false,
+        isDismissible: true,
+        useRootNavigator: true,
+        barrierColor: Colors.black54,
         backgroundColor: Colors.white,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         ),
-        builder: (sheetCtx) => SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: ColumnActionsMenu(
-              column: widget.column,
-              allColumns: widget.allColumns,
-              propertyId: widget.propertyId,
-              onClose: () => Navigator.of(sheetCtx).pop(),
-              onAddCard: widget.onAddCard,
-              onOpenConfig: widget.onOpenConfig,
-            ),
+        builder: (sheetCtx) => SingleChildScrollView(
+          padding: const EdgeInsets.only(top: 8, bottom: 16),
+          child: ColumnActionsMenu(
+            column: widget.column,
+            allColumns: widget.allColumns,
+            propertyId: widget.propertyId,
+            inSheet: true,
+            onClose: () => Navigator.of(sheetCtx).pop(),
+            onAddCard: widget.onAddCard,
+            onOpenConfig: () {
+              _configAfter = true;
+              Navigator.of(sheetCtx).pop();
+            },
           ),
         ),
-      );
+      ).then((_) {
+        if (_configAfter && mounted) widget.onOpenConfig();
+      });
     } else {
       // Desktop / tablet: dropdown anchored below the button, right-aligned.
       final box = context.findRenderObject() as RenderBox?;
@@ -395,7 +407,10 @@ class _ColumnMenuButtonState extends State<ColumnMenuButton> {
                     propertyId: widget.propertyId,
                     onClose: () => Navigator.of(dlgCtx).pop(),
                     onAddCard: widget.onAddCard,
-                    onOpenConfig: widget.onOpenConfig,
+                    onOpenConfig: () {
+                      Navigator.of(dlgCtx).pop();
+                      widget.onOpenConfig();
+                    },
                   ),
                 ),
               ),

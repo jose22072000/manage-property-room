@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../application/notifiers/notifiers.dart';
 import '../../application/providers/api_providers.dart';
+import '../../core/errors.dart';
 import '../../domain/domain.dart';
 
 // ── providers ────────────────────────────────────────────────────────────────
@@ -81,12 +82,13 @@ class _AuditPageState extends ConsumerState<AuditPage> {
       ),
       body: auditAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (all) {
           final filtered = _filtered(all);
           final totalPages = ((filtered.length - 1) ~/ _pageSize) + 1;
           final safePage = _page.clamp(0, (totalPages - 1).clamp(0, 999));
           final pageEvents = filtered.skip(safePage * _pageSize).take(_pageSize).toList();
+          final isMobile = MediaQuery.sizeOf(context).width < 600;
 
           return Column(
             children: [
@@ -97,20 +99,22 @@ class _AuditPageState extends ConsumerState<AuditPage> {
                 onDateFilter: (f) => setState(() { _dateFilter = f; _page = 0; }),
                 onSearch: (v) => setState(() { _search = v; _page = 0; }),
               ),
-              // Table header
-              Container(
-                color: const Color(0xFFF1F5F9),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                child: Row(children: [
-                  _hd('Acción', 76),
-                  _hd('Entidad', 70),
-                  const SizedBox(width: 8),
-                  Expanded(child: _hd('Detalle', null)),
-                  _hd('Usuario', 130),
-                  _hd('Fecha', 120),
-                ]),
-              ),
-              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              // Table header — only on desktop
+              if (!isMobile) ...[
+                Container(
+                  color: const Color(0xFFF1F5F9),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  child: Row(children: [
+                    _hd('Acción', 76),
+                    _hd('Entidad', 70),
+                    const SizedBox(width: 8),
+                    Expanded(child: _hd('Detalle', null)),
+                    _hd('Usuario', 130),
+                    _hd('Fecha', 120),
+                  ]),
+                ),
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              ],
               // Event rows
               Expanded(
                 child: filtered.isEmpty
@@ -129,6 +133,7 @@ class _AuditPageState extends ConsumerState<AuditPage> {
                         itemBuilder: (ctx, i) => _AuditRow(
                           event: pageEvents[i],
                           isEven: i.isEven,
+                          isMobile: isMobile,
                         ),
                       ),
               ),
@@ -290,14 +295,70 @@ class _ToolbarState extends State<_Toolbar> {
 // ── event row ────────────────────────────────────────────────────────────────
 
 class _AuditRow extends StatelessWidget {
-  const _AuditRow({required this.event, required this.isEven});
+  const _AuditRow({required this.event, required this.isEven, this.isMobile = false});
   final AuditEvent event;
   final bool isEven;
+  final bool isMobile;
 
   @override
   Widget build(BuildContext context) {
     final ts = DateFormat('dd/MM/yy HH:mm').format(event.createdAt.toLocal());
     final color = _actionColor(event.action);
+
+    if (isMobile) {
+      return Container(
+        color: isEven ? Colors.white : const Color(0xFFFAFAFA),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Row 1: badges + timestamp
+            Row(
+              children: [
+                _Badge(label: _actionLabel(event.action), color: color),
+                const SizedBox(width: 6),
+                _EntityBadge(entity: event.entity),
+                const Spacer(),
+                Text(
+                  ts,
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                ),
+              ],
+            ),
+            // Row 2: detail
+            if (event.detail.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                event.detail,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            // Row 3: actor
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 8,
+                  backgroundColor: const Color(0xFFDDE8FF),
+                  child: Text(
+                    event.actorName.isNotEmpty ? event.actorName[0].toUpperCase() : '?',
+                    style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  event.actorName,
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+                ),
+              ],
+            ),
+            const Divider(height: 12, color: Color(0xFFE2E8F0)),
+          ],
+        ),
+      );
+    }
 
     return Container(
       color: isEven ? Colors.white : const Color(0xFFFAFAFA),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/notifiers/notifiers.dart';
+import '../../core/errors.dart';
 import '../../domain/domain.dart';
 
 class UsersPage extends ConsumerWidget {
@@ -13,7 +14,7 @@ class UsersPage extends ConsumerWidget {
 
     return usersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (users) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -59,6 +60,9 @@ class UsersPage extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      enableDrag: false,
+      useRootNavigator: true,
+      barrierColor: Colors.black54,
       builder: (_) => _UserEditorSheet(existing: existing, properties: props, ref: ref),
     );
   }
@@ -290,7 +294,7 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
       }
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      setState(() { _saving = false; _error = e.toString(); });
+      setState(() { _saving = false; _error = friendlyError(e); });
     }
   }
 }

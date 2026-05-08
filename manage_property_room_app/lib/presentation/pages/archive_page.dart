@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/notifiers/notifiers.dart';
 import '../../core/date_formatters.dart';
+import '../../core/errors.dart';
 import '../../domain/domain.dart';
 import '../widgets/shared/toast.dart';
 
@@ -14,7 +15,7 @@ class ArchivePage extends ConsumerWidget {
 
     return archiveAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(child: Text(friendlyError(e))),
         data: (cards) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,

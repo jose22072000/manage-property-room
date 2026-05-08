@@ -9,6 +9,7 @@ android {
     namespace = "com.managepropertyroom.manage_property_room_app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+    ndkPath = "/usr/lib/android-sdk/ndk/28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

@@ -193,6 +193,9 @@ class CardItemWidget extends ConsumerWidget {
   void _showMoveDialog(BuildContext context, WidgetRef ref) {
     showModalBottomSheet(
       context: context,
+      enableDrag: false,
+      useRootNavigator: true,
+      barrierColor: Colors.black54,
       builder: (_) => _MoveCardSheet(
         card: card,
         allColumns: allColumns,

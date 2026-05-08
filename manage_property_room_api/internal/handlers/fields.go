@@ -48,6 +48,7 @@ func (h *FieldsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Fields().Create(r.Context(), f); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "create", "field", f.ID, f.Label)
 	httpx.WriteJSON(w, http.StatusCreated, f)
 }
 
@@ -70,14 +71,19 @@ func (h *FieldsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Fields().Update(r.Context(), f); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "update", "field", f.ID, f.Label)
 	httpx.WriteJSON(w, http.StatusOK, f)
 }
 
 func (h *FieldsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	f, _ := h.Store.Fields().GetByID(r.Context(), id)
+	fLabel := ""
+	if f != nil { fLabel = f.Label }
 	if err := h.Store.Fields().Delete(r.Context(), id); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "delete", "field", id, fLabel)
 	w.WriteHeader(http.StatusNoContent)
 }
 

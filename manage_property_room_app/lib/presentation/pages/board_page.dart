@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../application/notifiers/notifiers.dart';
+import '../../core/errors.dart';
 import '../../core/property_visuals.dart';
 import '../../core/responsive.dart';
 import '../../domain/domain.dart';
@@ -62,6 +63,9 @@ class _BoardPageState extends ConsumerState<BoardPage> {
               context: context,
               isScrollControlled: true,
               useSafeArea: true,
+              enableDrag: false,
+              useRootNavigator: true,
+              barrierColor: Colors.black54,
               builder: (_) => CardDetailSheet(
                 card: target!,
                 column: targetColumn!,
@@ -137,7 +141,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
         Expanded(
           child: boardAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Error: $e')),
+            error: (e, _) => Center(child: Text(friendlyError(e))),
             data: (state) {
               if (state.columns.isEmpty) {
                 return _EmptyBoard(
@@ -160,11 +164,14 @@ class _BoardPageState extends ConsumerState<BoardPage> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (_) => AddColumnSheet(
+      enableDrag: false,
+      useRootNavigator: true,
+      barrierColor: Colors.black54,
+      builder: (sheetCtx) => AddColumnSheet(
         propertyId: widget.propertyId,
         onAdd: (title, color) {
           ref.read(boardProvider(widget.propertyId).notifier).addColumn(title, color);
-          Navigator.pop(context);
+          Navigator.of(sheetCtx).pop();
         },
       ),
     );

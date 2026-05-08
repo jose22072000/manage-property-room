@@ -465,7 +465,7 @@ class BoardCard {
         'roomCode': roomCode,
         'cleanedBy': cleanedBy,
         'priority': priority.name,
-        'checkinDate': checkinDate?.toIso8601String(),
+        'checkinDate': checkinDate?.toUtc().toIso8601String(),
         'assignedToId': assignedToId,
         'kind': kind.name,
         'createdAt': createdAt.toIso8601String(),

@@ -97,5 +97,21 @@ func (h *ArchiveHandler) Restore(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Archive().Delete(r.Context(), id); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "restore", "archive", id, "")
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (h *ArchiveHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	item, err := h.Store.Archive().GetByID(r.Context(), id)
+	if err != nil { httpx.HandleError(w, err); return }
+	detail := ""
+	if item.Kind == domain.ArchiveKindCard {
+		if v, ok := item.Payload["title"].(string); ok { detail = v }
+	}
+	if err := h.Store.Archive().Delete(r.Context(), id); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	recordAudit(r.Context(), h.Store, "delete", "archive", id, detail)
+	w.WriteHeader(http.StatusNoContent)
 }

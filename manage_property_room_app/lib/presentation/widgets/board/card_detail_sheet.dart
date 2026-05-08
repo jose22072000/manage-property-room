@@ -268,17 +268,16 @@ class _CardDetailSheetState extends ConsumerState<CardDetailSheet> {
                     final visible = fields.where((f) => f.enabled && f.showOnCard).toList();
                     if (visible.isEmpty) return const SizedBox.shrink();
                     final maxW = constraints.maxWidth;
-                    // Two-column grid when wide enough, otherwise single column.
-                    final twoCol = maxW >= 520;
-                    final tileWidth = twoCol ? (maxW - 12) / 2 : maxW;
+                    final halfW = (maxW - 12) / 2;
                     return Wrap(
                       spacing: 12,
                       runSpacing: 8,
                       children: visible.map((field) {
-                        // Image fields & long text take full width
-                        final fullWidth = field.type == FieldType.image;
+                        // Checkboxes are compact → pair side by side
+                        // Image/text/select need full width
+                        final isNarrow = field.type == FieldType.checkbox;
                         return SizedBox(
-                          width: fullWidth ? maxW : tileWidth,
+                          width: isNarrow ? halfW : maxW,
                           child: _CustomFieldRow(
                             field: field,
                             value: _card.customFields[field.id],
@@ -591,6 +590,9 @@ class _Sidebar extends StatelessWidget {
   void _showPriorityPicker(BuildContext context) {
     showModalBottomSheet(
       context: context,
+      enableDrag: false,
+      useRootNavigator: true,
+      barrierColor: Colors.black54,
       builder: (_) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -625,6 +627,9 @@ class _Sidebar extends StatelessWidget {
   void _showAssigneePicker(BuildContext context) {
     showModalBottomSheet(
       context: context,
+      enableDrag: false,
+      useRootNavigator: true,
+      barrierColor: Colors.black54,
       builder: (_) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -838,6 +843,9 @@ class _CustomFieldRowState extends State<_CustomFieldRow> {
     final current = widget.value?.toString();
     showModalBottomSheet(
       context: context,
+      enableDrag: false,
+      useRootNavigator: true,
+      barrierColor: Colors.black54,
       builder: (_) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -974,6 +982,7 @@ class _CustomFieldRowState extends State<_CustomFieldRow> {
     if (!context.mounted) return;
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
+      useRootNavigator: true,
       builder: (_) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [

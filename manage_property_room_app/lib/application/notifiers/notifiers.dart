@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
+import '../../core/errors.dart';
 import '../../domain/domain.dart';
 import '../../permissions/policy.dart';
 import '../../data/remote/api_client.dart';
@@ -14,12 +15,8 @@ const _uuid = Uuid();
 /// to refresh its list automatically without a manual reload.
 final auditVersionProvider = StateProvider<int>((ref) => 0);
 
-/// Returns a human-readable message from any exception.
-/// For [ApiException] it shows the server message; for others the toString.
-String _errMsg(Object e) {
-  if (e is ApiException) return e.message;
-  return '$e';
-}
+/// Returns a human-readable Spanish message from any exception.
+String _errMsg(Object e) => friendlyError(e);
 
 // ══════════════════════════════════════════
 //  Toast
@@ -287,10 +284,16 @@ final visiblePropertiesProvider = Provider<List<Property>>((ref) {
 // ══════════════════════════════════════════
 
 class FieldsNotifier extends AsyncNotifier<List<FieldDef>> {
+  Timer? _timer;
+
   @override
   Future<List<FieldDef>> build() async {
     final user = await ref.watch(currentUserProvider.future);
     if (user == null) return [];
+    // Poll every 10 s so field config changes made on web appear in mobile.
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _reload());
+    ref.onDispose(() => _timer?.cancel());
     final list = await ref.read(fieldsApiProvider).getAll();
     return list.map(FieldDef.fromJson).toList();
   }
@@ -629,7 +632,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
       'kind': card.kind.name,
       'customFields': card.customFields,
       if (card.checkinDate != null)
-        'checkinDate': card.checkinDate!.toIso8601String(),
+        'checkinDate': card.checkinDate!.toUtc().toIso8601String(),
       if (card.checkinDate == null) 'clearCheckin': true,
       if (card.assignedToId != null) 'assignedToId': card.assignedToId,
     };
@@ -802,16 +805,17 @@ class ArchiveNotifier extends AsyncNotifier<List<ArchivedCard>> {
   }
 
   Future<void> clearAll() async {
-    // No bulk-delete endpoint — restore all items so archive is empty.
+    // Permanently delete all archived items one by one (best-effort).
     final items = state.valueOrNull ?? [];
     for (final card in items) {
       try {
-        await ref.read(archiveApiProvider).restore(card.id);
+        await ref.read(archiveApiProvider).delete(card.id);
       } catch (_) {
         // best-effort
       }
     }
     ref.read(toastProvider.notifier).show('Archivo vaciado');
+    ref.read(auditVersionProvider.notifier).update((v) => v + 1);
     await reload();
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../application/notifiers/notifiers.dart';
+import '../../../core/errors.dart';
 import '../../../core/responsive.dart';
 import '../../../domain/domain.dart';
 
@@ -89,7 +90,7 @@ class _WorkersModal extends ConsumerWidget {
           height: 120,
           child: Center(child: CircularProgressIndicator()),
         ),
-        error: (e, _) => Text('Error: $e'),
+        error: (e, _) => Text(friendlyError(e)),
         data: (users) {
           final sorted = [...users]..sort((a, b) => a.name.compareTo(b.name));
           return Column(

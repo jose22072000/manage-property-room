@@ -17,4 +17,9 @@ class ArchiveApi {
   Future<void> restore(String archiveEntryId) async {
     await _client.post<dynamic>('/archive/$archiveEntryId/restore');
   }
+
+  /// Permanently delete an archived item (no restore to board).
+  Future<void> delete(String archiveEntryId) async {
+    await _client.delete<dynamic>('/archive/$archiveEntryId');
+  }
 }

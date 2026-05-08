@@ -238,6 +238,9 @@ class _BoardColumnWidgetState extends ConsumerState<BoardColumnWidget> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      enableDrag: false,
+      useRootNavigator: true,
+      barrierColor: Colors.black54,
       builder: (_) => CardDetailSheet(
         card: card,
         column: widget.column,
@@ -254,6 +257,9 @@ class _BoardColumnWidgetState extends ConsumerState<BoardColumnWidget> {
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
+      enableDrag: false,
+      useRootNavigator: true,
+      barrierColor: Colors.black54,
       builder: (_) => SafeArea(
         child: _ColumnConfigSheet(
           column: col,

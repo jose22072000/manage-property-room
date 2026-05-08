@@ -132,6 +132,7 @@ func New(d Deps) http.Handler {
 		// Archive
 		r.Get("/archive", archiveH.List)
 		r.Post("/archive/{id}/restore", archiveH.Restore)
+		r.Delete("/archive/{id}", archiveH.Delete)
 
 		// Audit (admin only)
 		r.Group(func(r chi.Router) {

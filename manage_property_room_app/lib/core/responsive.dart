@@ -29,6 +29,9 @@ Future<T?> showResponsiveModal<T>({
     isScrollControlled: isScrollControlled,
     useSafeArea: true,
     showDragHandle: true,
+    enableDrag: false,
+    useRootNavigator: true,
+    barrierColor: Colors.black54,
     builder: (ctx) => SafeArea(child: builder(ctx)),
   );
 }

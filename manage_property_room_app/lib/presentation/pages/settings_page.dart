@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../application/notifiers/notifiers.dart';
+import '../../core/errors.dart';
 import '../../core/property_visuals.dart';
 import '../../core/responsive.dart';
 import '../../data/remote/api_client.dart';
@@ -11,7 +12,7 @@ import '../widgets/shared/confirm_dialog.dart';
 
 const _uuid = Uuid();
 
-String _errMsg(Object e) => e is ApiException ? e.message : '$e';
+String _errMsg(Object e) => friendlyError(e);
 
 /// Página de configuración — paridad visual con `src/pages/SettingsPage.tsx`.
 ///

@@ -52,6 +52,7 @@ func (h *PropertiesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Properties().Create(r.Context(), p); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "create", "property", p.ID, p.Name)
 	httpx.WriteJSON(w, http.StatusCreated, p)
 }
 
@@ -71,14 +72,19 @@ func (h *PropertiesHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := h.Store.Properties().Update(r.Context(), p); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "update", "property", p.ID, p.Name)
 	httpx.WriteJSON(w, http.StatusOK, p)
 }
 
 func (h *PropertiesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	p, _ := h.Store.Properties().GetByID(r.Context(), id)
+	pName := ""
+	if p != nil { pName = p.Name }
 	if err := h.Store.Properties().Delete(r.Context(), id); err != nil {
 		httpx.HandleError(w, err); return
 	}
+	recordAudit(r.Context(), h.Store, "delete", "property", id, pName)
 	w.WriteHeader(http.StatusNoContent)
 }
 
