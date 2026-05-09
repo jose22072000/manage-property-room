@@ -53,13 +53,24 @@ func (h *UsersHandler) List(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch actorRole {
 	case domain.RoleOwner:
-		// Owner sees only the supervisors they created
-		users, err = h.Store.Users().ListCreatedBy(ctx, actorID, []domain.UserRole{domain.RoleSupervisor})
+		// Owner sees their supervisors PLUS the workers each supervisor created.
+		supervisors, e := h.Store.Users().ListCreatedBy(ctx, actorID, []domain.UserRole{domain.RoleSupervisor})
+		if e != nil { httpx.HandleError(w, e); return }
+		users = append(users, supervisors...)
+		for _, sup := range supervisors {
+			workers, e2 := h.Store.Users().ListCreatedBy(ctx, sup.ID, []domain.UserRole{
+				domain.RoleCleaning, domain.RoleMaintenance, domain.RoleOperator,
+			})
+			if e2 != nil { httpx.HandleError(w, e2); return }
+			users = append(users, workers...)
+		}
 	case domain.RoleSupervisor:
 		// Supervisor sees only the workers they created
-		users, err = h.Store.Users().ListCreatedBy(ctx, actorID, []domain.UserRole{domain.RoleCleaning, domain.RoleMaintenance})
+		users, err = h.Store.Users().ListCreatedBy(ctx, actorID, []domain.UserRole{
+			domain.RoleCleaning, domain.RoleMaintenance, domain.RoleOperator,
+		})
 	default:
-		// Admin/operator see all
+		// Admin sees all
 		users, err = h.Store.Users().List(ctx)
 	}
 	if err != nil { httpx.HandleError(w, err); return }
@@ -73,6 +84,10 @@ func (h *UsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Email == "" || req.Password == "" || req.Name == "" || req.Role == "" {
 		httpx.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "missing fields"); return
+	}
+	actorRole := httpx.RoleFrom(r.Context())
+	if !canCreateRole(actorRole, req.Role) {
+		httpx.WriteError(w, http.StatusForbidden, "FORBIDDEN", "cannot create that role"); return
 	}
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil { httpx.HandleError(w, err); return }

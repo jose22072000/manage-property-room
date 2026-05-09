@@ -19,7 +19,6 @@ class PropertyGroupsButton extends ConsumerWidget {
 
     final groups = groupsAsync.valueOrNull ?? [];
     final assigned = groups.where((g) => g.propertyIds.contains(propertyId)).toList();
-    final count = assigned.length;
 
     final canManage = currentUser != null &&
         (currentUser.role == UserRole.admin ||
@@ -28,22 +27,13 @@ class PropertyGroupsButton extends ConsumerWidget {
     return GestureDetector(
       onTap: () => _showModal(context, ref, groups, assigned, canManage),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        padding: const EdgeInsets.all(7),
+        margin: const EdgeInsets.only(left: 4),
         decoration: BoxDecoration(
           color: const Color(0x55000000),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.people_outline, color: Colors.white, size: 14),
-            if (count > 0) ...[
-              const SizedBox(width: 3),
-              Text('$count',
-                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-            ],
-          ],
-        ),
+        child: const Icon(Icons.people_outline, color: Colors.white, size: 18),
       ),
     );
   }

@@ -20,6 +20,7 @@ const (
 	ctxUserID ctxKey = iota
 	ctxRole
 	ctxActorName
+	ctxActorIP
 )
 
 // ── JSON helpers ─────────────────────────────────────────────────────────────
@@ -73,6 +74,31 @@ func DecodeJSON(r *http.Request, v any) error {
 
 // ── auth middleware ──────────────────────────────────────────────────────────
 
+// realIP extracts the client IP from a request, respecting X-Forwarded-For.
+func realIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
+	host := r.RemoteAddr
+	if h, _, err := splitHostPort(host); err == nil {
+		return h
+	}
+	return host
+}
+
+func splitHostPort(hostport string) (string, string, error) {
+	for i := len(hostport) - 1; i >= 0; i-- {
+		if hostport[i] == ':' {
+			return hostport[:i], hostport[i+1:], nil
+		}
+	}
+	return "", "", errors.New("no port in address")
+}
+
 func RequireAuth(issuer *auth.TokenIssuer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +116,7 @@ func RequireAuth(issuer *auth.TokenIssuer) func(http.Handler) http.Handler {
 			ctx := context.WithValue(r.Context(), ctxUserID, claims.UserID)
 			ctx = context.WithValue(ctx, ctxRole, claims.Role)
 			ctx = context.WithValue(ctx, ctxActorName, claims.ActorName)
+			ctx = context.WithValue(ctx, ctxActorIP, realIP(r))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -119,6 +146,11 @@ func UserIDFrom(ctx context.Context) string {
 
 func ActorNameFrom(ctx context.Context) string {
 	v, _ := ctx.Value(ctxActorName).(string)
+	return v
+}
+
+func ActorIPFrom(ctx context.Context) string {
+	v, _ := ctx.Value(ctxActorIP).(string)
 	return v
 }
 

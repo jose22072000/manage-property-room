@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"net"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,6 +17,7 @@ import (
 func recordAudit(ctx context.Context, s store.Store, action, entity, entityID, detail string, propertyID ...string) {
 	actorID := httpx.UserIDFrom(ctx)
 	actorName := httpx.ActorNameFrom(ctx)
+	actorIP := httpx.ActorIPFrom(ctx)
 	pid := ""
 	if len(propertyID) > 0 { pid = propertyID[0] }
 
@@ -30,6 +33,7 @@ func recordAudit(ctx context.Context, s store.Store, action, entity, entityID, d
 			ID:         uuid.NewString(),
 			ActorID:    actorID,
 			ActorName:  actorName,
+			ActorIP:    actorIP,
 			Action:     action,
 			Entity:     entity,
 			EntityID:   entityID,
@@ -38,4 +42,23 @@ func recordAudit(ctx context.Context, s store.Store, action, entity, entityID, d
 			CreatedAt:  time.Now().UTC(),
 		})
 	}()
+}
+
+// clientIP extracts the real client IP from a request, respecting X-Forwarded-For.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// X-Forwarded-For can be a comma-separated list; take the first (original client).
+		if host, _, err := net.SplitHostPort(xff); err == nil {
+			return host
+		}
+		return xff
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

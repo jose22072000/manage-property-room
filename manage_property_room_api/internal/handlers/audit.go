@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/jose/manage_property_room_api/internal/domain"
 	"github.com/jose/manage_property_room_api/internal/httpx"
 	"github.com/jose/manage_property_room_api/internal/store"
@@ -45,4 +47,12 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	if err != nil { httpx.HandleError(w, err); return }
 	if events == nil { events = []domain.AuditEvent{} }
 	httpx.WriteJSON(w, http.StatusOK, events)
+}
+
+func (h *AuditHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.Store.Audit().Delete(r.Context(), id); err != nil {
+		httpx.HandleError(w, err); return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

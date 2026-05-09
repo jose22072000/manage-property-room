@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -61,9 +62,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       final token = ref.read(apiClientProvider).session.token;
       if (token != null && token.isNotEmpty) {
         await ref.read(settingsRepoProvider).saveToken(token);
-        // Schedule background notification polling
-        final baseUrl = ref.read(apiClientProvider).baseUrl;
-        await _scheduleBackgroundNotifs(baseUrl, token);
+        // Schedule background notification polling (mobile only)
+        if (!kIsWeb) {
+          final baseUrl = ref.read(apiClientProvider).baseUrl;
+          await _scheduleBackgroundNotifs(baseUrl, token);
+        }
       }
 
       // 5. Set as current user (stores id in settings + updates state)
@@ -76,7 +79,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         _error = friendlyError(e);
         _busy = false;
       });
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('LOGIN ERROR: $e\n$st');
       setState(() {
         _error = friendlyError(e);
         _busy = false;

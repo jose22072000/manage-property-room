@@ -10,7 +10,7 @@ services:
       DB_DRIVER: "sqlite"
       DB_DSN: "/data/app.db"
       JWT_SECRET: "${JWT_SECRET:-dev-secret-change-me}"
-      JWT_TTL: "${JWT_TTL:-24h}"
+      JWT_TTL: "${JWT_TTL:-720h}"
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
     volumes:
       - ./data:/data

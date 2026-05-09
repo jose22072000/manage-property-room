@@ -10,10 +10,12 @@ import (
 	"github.com/jose/manage_property_room_api/internal/domain"
 	"github.com/jose/manage_property_room_api/internal/httpx"
 	"github.com/jose/manage_property_room_api/internal/store"
+	"github.com/jose/manage_property_room_api/internal/webhooks"
 )
 
 type CardsHandler struct {
-	Store store.Store
+	Store      store.Store
+	Dispatcher *webhooks.Dispatcher
 }
 
 type createCardRequest struct {
@@ -73,6 +75,7 @@ func (h *CardsHandler) CreateForColumn(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "create", "card", c.ID, c.Title, c.PropertyID)
+	h.fire(domain.WebhookEventCardCreated, c, nil)
 	httpx.WriteJSON(w, http.StatusCreated, c)
 }
 
@@ -137,6 +140,7 @@ func (h *CardsHandler) Move(w http.ResponseWriter, r *http.Request) {
 	c, err := h.Store.Cards().GetByID(r.Context(), id)
 	if err != nil { httpx.HandleError(w, err); return }
 	recordAudit(r.Context(), h.Store, "move", "card", id, c.Title, c.PropertyID)
+	h.fire(domain.WebhookEventCardMoved, c, map[string]any{"targetColumnId": req.TargetColumnID, "position": req.Position})
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -151,6 +155,9 @@ func (h *CardsHandler) ToggleDone(w http.ResponseWriter, r *http.Request) {
 	status := "pendiente"
 	if c.IsDone { status = "completada" }
 	recordAudit(r.Context(), h.Store, "update", "card", c.ID, c.Title+" → "+status, c.PropertyID)
+	evt := domain.WebhookEventCardUncompleted
+	if c.IsDone { evt = domain.WebhookEventCardCompleted }
+	h.fire(evt, c, nil)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -162,6 +169,7 @@ func (h *CardsHandler) Archive(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "archive", "card", c.ID, c.Title, c.PropertyID)
+	h.fire(domain.WebhookEventCardArchived, c, nil)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -201,4 +209,29 @@ func (h *CardsHandler) Reorder(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// fire dispatches a webhook event for `c`. Safe with a nil dispatcher.
+func (h *CardsHandler) fire(event string, c *domain.Card, extra map[string]any) {
+	if h.Dispatcher == nil || c == nil {
+		return
+	}
+	data := map[string]any{
+		"cardId":     c.ID,
+		"propertyId": c.PropertyID,
+		"columnId":   c.ColumnID,
+		"title":      c.Title,
+		"isDone":     c.IsDone,
+		"priority":   c.Priority,
+		"kind":       c.Kind,
+	}
+	for k, v := range extra {
+		data[k] = v
+	}
+	h.Dispatcher.Enqueue(webhooks.Event{
+		Event:      event,
+		PropertyID: c.PropertyID,
+		OccurredAt: time.Now().UTC(),
+		Data:       data,
+	})
 }

@@ -9,4 +9,8 @@ class AuditApi {
     final data = await _client.get<List<dynamic>>('/audit?limit=$limit');
     return data.map((e) => AuditEvent.fromJson(e as Map<String, dynamic>)).toList();
   }
+
+  Future<void> delete(String id) async {
+    await _client.delete<dynamic>('/audit/$id');
+  }
 }

@@ -13,6 +13,7 @@ import '../presentation/pages/notifications_page.dart';
 import '../presentation/pages/settings_page.dart';
 import '../presentation/pages/users_page.dart';
 import '../presentation/pages/groups_page.dart';
+import '../presentation/pages/webhooks_page.dart';
 import '../presentation/pages/api_debug_page.dart';
 import '../presentation/pages/login_page.dart';
 import '../presentation/widgets/shared/app_shell.dart';
@@ -50,19 +51,14 @@ GoRouter buildRouter(WidgetRef ref) {
       if (user == null && !onLogin) return '/login';
       if (user != null && onLogin) return '/';
 
-      // Admin-only pages
+      // Role-based route guard. Single source of truth shared with the
+      // navigation bar so what's hidden in the menu is also blocked when
+      // typed manually in the URL.
       if (user != null) {
-        final isAdminOnly = state.matchedLocation.startsWith('/settings') ||
-            state.matchedLocation.startsWith('/audit');
-        final isNotifications = state.matchedLocation.startsWith('/notifications');
-        final isUserMgmt = state.matchedLocation.startsWith('/users');
-        if (isAdminOnly && !Policy.canBoard(user, BoardAction.manageUsers)) {
-          return '/';
-        }
-        if (isNotifications && !Policy.canSeeNotifications(user)) {
-          return '/';
-        }
-        if (isUserMgmt && !Policy.canSeeUserManagement(user)) {
+        final route = state.matchedLocation;
+        // Always allow login + api debug
+        if (route == '/login' || route.startsWith('/api-debug')) return null;
+        if (!Policy.canVisitRoute(user, route)) {
           return '/';
         }
       }
@@ -112,6 +108,10 @@ GoRouter buildRouter(WidgetRef ref) {
           GoRoute(
             path: '/groups',
             pageBuilder: (_, state) => const NoTransitionPage(child: GroupsPage()),
+          ),
+          GoRoute(
+            path: '/webhooks',
+            pageBuilder: (_, state) => const NoTransitionPage(child: WebhooksPage()),
           ),
           GoRoute(
             path: '/api-debug',

@@ -670,6 +670,7 @@ type fieldRow struct {
 	Icon        string         `db:"icon"`
 	OffLabel    string         `db:"off_label"`
 	Position    int            `db:"position"`
+	OwnerID     sql.NullString `db:"owner_id"`
 }
 
 func (r fieldRow) toDomain() (*domain.FieldDef, error) {
@@ -678,6 +679,7 @@ func (r fieldRow) toDomain() (*domain.FieldDef, error) {
 		Enabled: r.Enabled == 1, ShowOnCard: r.ShowOnCard == 1,
 		Icon: r.Icon, OffLabel: r.OffLabel, Position: r.Position,
 	}
+	if r.OwnerID.Valid { f.OwnerID = r.OwnerID.String }
 	if r.OptionsJSON.Valid && r.OptionsJSON.String != "" {
 		if err := json.Unmarshal([]byte(r.OptionsJSON.String), &f.Options); err != nil {
 			return nil, fmt.Errorf("decode options: %w", err)
@@ -688,11 +690,13 @@ func (r fieldRow) toDomain() (*domain.FieldDef, error) {
 
 func (r *fieldRepo) Create(ctx context.Context, f *domain.FieldDef) error {
 	optsJSON, _ := marshalJSON(f.Options)
+	var ownerID interface{}
+	if f.OwnerID != "" { ownerID = f.OwnerID }
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO fields(id,label,type,options_json,enabled,show_on_card,icon,off_label,position)
-		 VALUES(?,?,?,?,?,?,?,?,?)`,
+		`INSERT INTO fields(id,label,type,options_json,enabled,show_on_card,icon,off_label,position,owner_id)
+		 VALUES(?,?,?,?,?,?,?,?,?,?)`,
 		f.ID, f.Label, string(f.Type), nullStr(optsJSON),
-		boolToInt(f.Enabled), boolToInt(f.ShowOnCard), f.Icon, f.OffLabel, f.Position)
+		boolToInt(f.Enabled), boolToInt(f.ShowOnCard), f.Icon, f.OffLabel, f.Position, ownerID)
 	return err
 }
 
@@ -709,6 +713,26 @@ func (r *fieldRepo) List(ctx context.Context) ([]domain.FieldDef, error) {
 	if err := r.db.SelectContext(ctx, &rows, `SELECT * FROM fields ORDER BY position`); err != nil {
 		return nil, err
 	}
+	out := make([]domain.FieldDef, 0, len(rows))
+	for _, row := range rows {
+		f, err := row.toDomain()
+		if err != nil { return nil, err }
+		out = append(out, *f)
+	}
+	return out, nil
+}
+
+// ListByOwner returns the field defs belonging to [ownerID]. When ownerID is
+// empty it returns the legacy/global ones (owner_id IS NULL).
+func (r *fieldRepo) ListByOwner(ctx context.Context, ownerID string) ([]domain.FieldDef, error) {
+	var rows []fieldRow
+	var err error
+	if ownerID == "" {
+		err = r.db.SelectContext(ctx, &rows, `SELECT * FROM fields WHERE owner_id IS NULL ORDER BY position`)
+	} else {
+		err = r.db.SelectContext(ctx, &rows, `SELECT * FROM fields WHERE owner_id=? ORDER BY position`, ownerID)
+	}
+	if err != nil { return nil, err }
 	out := make([]domain.FieldDef, 0, len(rows))
 	for _, row := range rows {
 		f, err := row.toDomain()
@@ -921,9 +945,9 @@ type auditRepo struct{ db *sqlx.DB }
 
 func (r *auditRepo) Create(ctx context.Context, e *domain.AuditEvent) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO audit_events(id,actor_id,actor_name,action,entity,entity_id,detail,property_id,created_at)
-                 VALUES(?,?,?,?,?,?,?,?,?)`,
-		e.ID, e.ActorID, e.ActorName, e.Action, e.Entity, e.EntityID, e.Detail,
+		`INSERT INTO audit_events(id,actor_id,actor_name,actor_ip,action,entity,entity_id,detail,property_id,created_at)
+                 VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		e.ID, e.ActorID, e.ActorName, e.ActorIP, e.Action, e.Entity, e.EntityID, e.Detail,
 		e.PropertyID, e.CreatedAt.UTC().Format(time.RFC3339Nano))
 	return err
 }
@@ -935,7 +959,7 @@ func (r *auditRepo) scanAuditRows(rows *sql.Rows) ([]domain.AuditEvent, error) {
 		var e domain.AuditEvent
 		var ts string
 		var pid *string
-		if err := rows.Scan(&e.ID, &e.ActorID, &e.ActorName, &e.Action, &e.Entity, &e.EntityID, &e.Detail, &pid, &ts); err != nil {
+		if err := rows.Scan(&e.ID, &e.ActorID, &e.ActorName, &e.ActorIP, &e.Action, &e.Entity, &e.EntityID, &e.Detail, &pid, &ts); err != nil {
 			return nil, err
 		}
 		if pid != nil { e.PropertyID = *pid }
@@ -948,7 +972,7 @@ func (r *auditRepo) scanAuditRows(rows *sql.Rows) ([]domain.AuditEvent, error) {
 func (r *auditRepo) List(ctx context.Context, limit int) ([]domain.AuditEvent, error) {
 	if limit <= 0 { limit = 200 }
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id,actor_id,actor_name,action,entity,entity_id,detail,property_id,created_at
+		`SELECT id,actor_id,actor_name,actor_ip,action,entity,entity_id,detail,property_id,created_at
                  FROM audit_events ORDER BY created_at DESC LIMIT ?`, limit)
 	if err != nil { return nil, err }
 	return r.scanAuditRows(rows)
@@ -963,11 +987,19 @@ func (r *auditRepo) ListByPropertyIDs(ctx context.Context, propertyIDs []string,
 	for _, id := range propertyIDs { args = append(args, id) }
 	args = append(args, limit)
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id,actor_id,actor_name,action,entity,entity_id,detail,property_id,created_at
+		`SELECT id,actor_id,actor_name,actor_ip,action,entity,entity_id,detail,property_id,created_at
                  FROM audit_events WHERE property_id IN (`+placeholders+`)
                  ORDER BY created_at DESC LIMIT ?`, args...)
 	if err != nil { return nil, err }
 	return r.scanAuditRows(rows)
+}
+
+func (r *auditRepo) Delete(ctx context.Context, id string) error {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM audit_events WHERE id=?`, id)
+	if err != nil { return err }
+	n, _ := res.RowsAffected()
+	if n == 0 { return store.ErrNotFound }
+	return nil
 }
 
 // ─────────────────────────────────────────
@@ -980,23 +1012,27 @@ func (r *groupRepo) Create(ctx context.Context, g *domain.Group) error {
 	now := nowUTC()
 	if g.CreatedAt.IsZero() { g.CreatedAt = now }
 	g.UpdatedAt = now
+	var createdBy interface{}
+	if g.CreatedBy != "" { createdBy = g.CreatedBy }
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO groups(id,name,created_at,updated_at) VALUES(?,?,?,?)`,
-		g.ID, g.Name, g.CreatedAt.Format(time.RFC3339Nano), g.UpdatedAt.Format(time.RFC3339Nano))
+		`INSERT INTO groups(id,name,created_by,created_at,updated_at) VALUES(?,?,?,?,?)`,
+		g.ID, g.Name, createdBy, g.CreatedAt.Format(time.RFC3339Nano), g.UpdatedAt.Format(time.RFC3339Nano))
 	return err
 }
 
 func (r *groupRepo) GetByID(ctx context.Context, id string) (*domain.Group, error) {
 	var row struct {
-		ID        string `db:"id"`
-		Name      string `db:"name"`
-		CreatedAt string `db:"created_at"`
-		UpdatedAt string `db:"updated_at"`
+		ID        string  `db:"id"`
+		Name      string  `db:"name"`
+		CreatedBy *string `db:"created_by"`
+		CreatedAt string  `db:"created_at"`
+		UpdatedAt string  `db:"updated_at"`
 	}
 	if err := r.db.GetContext(ctx, &row, `SELECT * FROM groups WHERE id=?`, id); err != nil {
 		return nil, wrapNotFound(err)
 	}
 	g := &domain.Group{ID: row.ID, Name: row.Name}
+	if row.CreatedBy != nil { g.CreatedBy = *row.CreatedBy }
 	g.CreatedAt, _ = time.Parse(time.RFC3339Nano, row.CreatedAt)
 	g.UpdatedAt, _ = time.Parse(time.RFC3339Nano, row.UpdatedAt)
 	userIDs, _ := r.usersFor(ctx, id)
@@ -1008,10 +1044,11 @@ func (r *groupRepo) GetByID(ctx context.Context, id string) (*domain.Group, erro
 
 func (r *groupRepo) List(ctx context.Context) ([]domain.Group, error) {
 	var rows []struct {
-		ID        string `db:"id"`
-		Name      string `db:"name"`
-		CreatedAt string `db:"created_at"`
-		UpdatedAt string `db:"updated_at"`
+		ID        string  `db:"id"`
+		Name      string  `db:"name"`
+		CreatedBy *string `db:"created_by"`
+		CreatedAt string  `db:"created_at"`
+		UpdatedAt string  `db:"updated_at"`
 	}
 	if err := r.db.SelectContext(ctx, &rows, `SELECT * FROM groups ORDER BY created_at`); err != nil {
 		return nil, err
@@ -1019,6 +1056,39 @@ func (r *groupRepo) List(ctx context.Context) ([]domain.Group, error) {
 	out := make([]domain.Group, 0, len(rows))
 	for _, row := range rows {
 		g := domain.Group{ID: row.ID, Name: row.Name}
+		if row.CreatedBy != nil { g.CreatedBy = *row.CreatedBy }
+		g.CreatedAt, _ = time.Parse(time.RFC3339Nano, row.CreatedAt)
+		g.UpdatedAt, _ = time.Parse(time.RFC3339Nano, row.UpdatedAt)
+		g.UserIDs, _ = r.usersFor(ctx, row.ID)
+		g.PropertyIDs, _ = r.propertiesFor(ctx, row.ID)
+		out = append(out, g)
+	}
+	return out, nil
+}
+
+// ListByCreators returns groups whose `created_by` matches one of [creatorIDs].
+// Used to scope the groups list per actor: an owner sees the groups their
+// supervisors created (and their own); a supervisor sees only their own.
+func (r *groupRepo) ListByCreators(ctx context.Context, creatorIDs []string) ([]domain.Group, error) {
+	if len(creatorIDs) == 0 { return []domain.Group{}, nil }
+	query, args, err := sqlx.In(
+		`SELECT * FROM groups WHERE created_by IN (?) ORDER BY created_at`, creatorIDs)
+	if err != nil { return nil, err }
+	query = r.db.Rebind(query)
+	var rows []struct {
+		ID        string  `db:"id"`
+		Name      string  `db:"name"`
+		CreatedBy *string `db:"created_by"`
+		CreatedAt string  `db:"created_at"`
+		UpdatedAt string  `db:"updated_at"`
+	}
+	if err := r.db.SelectContext(ctx, &rows, query, args...); err != nil {
+		return nil, err
+	}
+	out := make([]domain.Group, 0, len(rows))
+	for _, row := range rows {
+		g := domain.Group{ID: row.ID, Name: row.Name}
+		if row.CreatedBy != nil { g.CreatedBy = *row.CreatedBy }
 		g.CreatedAt, _ = time.Parse(time.RFC3339Nano, row.CreatedAt)
 		g.UpdatedAt, _ = time.Parse(time.RFC3339Nano, row.UpdatedAt)
 		g.UserIDs, _ = r.usersFor(ctx, row.ID)

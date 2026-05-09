@@ -36,6 +36,18 @@ func (h *PropertiesHandler) List(w http.ResponseWriter, r *http.Request) {
 		items, err = h.Store.Properties().ListByOwner(ctx, actorID)
 	case domain.RoleSupervisor:
 		items, err = h.Store.Properties().ListBySupervisor(ctx, actorID)
+	case domain.RoleCleaning, domain.RoleMaintenance, domain.RoleOperator:
+		// Workers see only properties they're members of via groups.
+		propIDs, e := h.Store.Groups().ListPropertiesForUser(ctx, actorID)
+		if e != nil { httpx.HandleError(w, e); return }
+		all, e2 := h.Store.Properties().List(ctx)
+		if e2 != nil { httpx.HandleError(w, e2); return }
+		set := make(map[string]struct{}, len(propIDs))
+		for _, id := range propIDs { set[id] = struct{}{} }
+		items = make([]domain.Property, 0, len(propIDs))
+		for _, p := range all {
+			if _, ok := set[p.ID]; ok { items = append(items, p) }
+		}
 	default:
 		items, err = h.Store.Properties().List(ctx)
 	}

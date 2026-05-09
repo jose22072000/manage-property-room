@@ -48,7 +48,6 @@ class GroupsPage extends ConsumerWidget {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (_, i) => _GroupTile(
                       group: groups[i],
-                      users: usersAsync.valueOrNull ?? [],
                       properties: propsAsync.valueOrNull ?? [],
                       onEdit: () => _showEditor(context, ref, groups[i], usersAsync.valueOrNull ?? [], propsAsync.valueOrNull ?? []),
                       onDelete: () => ref.read(groupsProvider.notifier).delete(groups[i].id),
@@ -77,21 +76,18 @@ class GroupsPage extends ConsumerWidget {
 class _GroupTile extends StatelessWidget {
   const _GroupTile({
     required this.group,
-    required this.users,
     required this.properties,
     required this.onEdit,
     required this.onDelete,
   });
 
   final Group group;
-  final List<AppUser> users;
   final List<Property> properties;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final memberNames = users.where((u) => group.userIds.contains(u.id)).map((u) => u.name).toList();
     final propCodes = properties.where((p) => group.propertyIds.contains(p.id)).map((p) => p.code).toList();
 
     return ListTile(
@@ -103,15 +99,9 @@ class _GroupTile extends StatelessWidget {
         ),
       ),
       title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (memberNames.isNotEmpty)
-            Text(memberNames.join(', '), style: const TextStyle(fontSize: 12)),
-          if (propCodes.isNotEmpty)
-            Text(propCodes.join(', '), style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-        ],
-      ),
+      subtitle: propCodes.isEmpty
+          ? null
+          : Text(propCodes.join(', '), style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

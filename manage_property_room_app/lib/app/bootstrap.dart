@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,9 +20,11 @@ Future<void> bootstrap() async {
   await Hive.initFlutter();
   await openHiveBoxes();
 
-  // Init notification services
-  await NotificationService.instance.init();
-  await BackgroundNotifService.instance.init();
+  // Init notification services (mobile only — not supported on web)
+  if (!kIsWeb) {
+    await NotificationService.instance.init();
+    await BackgroundNotifService.instance.init();
+  }
 
   // Create a temporary container to seed data and set initial user
   final container = ProviderContainer();
@@ -34,10 +37,6 @@ Future<void> bootstrap() async {
     fieldRepo: container.read(fieldRepoProvider),
   );
 
-  // Clear stored current user on every startup so login is always required.
-  // The LoginPage handles auth via the API and sets the user after success.
-  final settings = container.read(settingsRepoProvider);
-  await settings.setCurrentUserId('');   // empty = no user
   container.dispose();
 
   runApp(const ProviderScope(child: _App()));

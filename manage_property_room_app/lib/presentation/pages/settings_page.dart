@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../application/notifiers/notifiers.dart';
@@ -27,6 +28,9 @@ class SettingsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isWide = MediaQuery.of(context).size.width >= 900;
+    final user = ref.watch(currentUserProvider).value;
+    final canManageWebhooks = user != null &&
+        (user.role == UserRole.admin || user.role == UserRole.owner);
     return Container(
       color: const Color(0xFFF8FAFC),
       child: SingleChildScrollView(
@@ -39,6 +43,10 @@ class SettingsPage extends ConsumerWidget {
               children: [
                 const _Header(),
                 const SizedBox(height: 24),
+                if (canManageWebhooks) ...[
+                  const _WebhooksLink(),
+                  const SizedBox(height: 24),
+                ],
                 if (isWide)
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1017,4 +1025,59 @@ class _ConfigItem {
   final IconData icon;
   final bool value;
   final ValueChanged<bool> onChanged;
+}
+
+/// Card linking to the dedicated /webhooks management page. Visible to
+/// admins and owners only (gated by the parent SettingsPage).
+class _WebhooksLink extends StatelessWidget {
+  const _WebhooksLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => GoRouter.of(context).push('/webhooks'),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.webhook,
+                  color: Color(0xFF1D4ED8), size: 22),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Webhooks',
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F172A))),
+                  SizedBox(height: 2),
+                  Text(
+                      'Notifica a sistemas externos cuando se completan tareas y deja que envíen tareas a tu tablero.',
+                      style:
+                          TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Color(0xFF94A3B8)),
+          ],
+        ),
+      ),
+    );
+  }
 }

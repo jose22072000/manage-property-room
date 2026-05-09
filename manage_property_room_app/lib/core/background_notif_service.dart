@@ -135,7 +135,7 @@ class BackgroundNotifService {
       _bgTaskTag,
       _bgTaskName,
       frequency: const Duration(minutes: 15),
-      existingWorkPolicy: ExistingWorkPolicy.replace,
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
       inputData: {'baseUrl': baseUrl, 'token': token},
       constraints: Constraints(networkType: NetworkType.connected),
     );

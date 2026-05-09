@@ -102,8 +102,14 @@ class ApiClient {
       return jsonDecode(res.body) as T;
     }
     if (res.statusCode == 401) {
+      final code = _extractCode(res) ?? 'UNAUTHORIZED';
+      final msg = _extractMessage(res) ?? 'Unauthorized';
+      if (code == 'INVALID_CREDENTIALS') {
+        // Bad login attempt — do NOT clear session
+        throw ApiException(code, msg, statusCode: 401);
+      }
       _session.clear();
-      throw UnauthorizedException(_extractMessage(res) ?? 'Unauthorized');
+      throw UnauthorizedException(msg);
     }
     final msg = _extractMessage(res) ?? 'HTTP ${res.statusCode}';
     final code = _extractCode(res) ?? 'HTTP_${res.statusCode}';
@@ -157,8 +163,13 @@ class ApiClient {
       return decoded as T;
     }
     if (res.statusCode == 401) {
+      final code = _extractCode(res) ?? 'UNAUTHORIZED';
+      final msg = _extractMessage(res) ?? 'Unauthorized';
+      if (code == 'INVALID_CREDENTIALS') {
+        throw ApiException(code, msg, statusCode: 401);
+      }
       _session.clear();
-      throw UnauthorizedException(_extractMessage(res) ?? 'Unauthorized');
+      throw UnauthorizedException(msg);
     }
     final msg = _extractMessage(res) ?? 'HTTP ${res.statusCode}';
     final code = _extractCode(res) ?? 'HTTP_${res.statusCode}';

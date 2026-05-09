@@ -755,6 +755,7 @@ class AuditEvent {
     required this.id,
     required this.actorId,
     required this.actorName,
+    this.actorIp = '',
     required this.action,
     required this.entity,
     required this.entityId,
@@ -766,6 +767,7 @@ class AuditEvent {
   final String id;
   final String actorId;
   final String actorName;
+  final String actorIp;
   final String action;
   final String entity;
   final String entityId;
@@ -777,6 +779,7 @@ class AuditEvent {
         id: j['id'] as String,
         actorId: j['actorId'] as String,
         actorName: j['actorName'] as String,
+        actorIp: (j['actorIp'] as String?) ?? '',
         action: j['action'] as String,
         entity: j['entity'] as String,
         entityId: j['entityId'] as String,

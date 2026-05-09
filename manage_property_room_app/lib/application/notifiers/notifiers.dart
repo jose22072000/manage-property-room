@@ -147,6 +147,10 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
   Future<void> setUser(AppUser user) async {
     final settings = ref.read(settingsRepoProvider);
     await settings.setCurrentUserId(user.id);
+    // Invalidate all API-backed providers so they rebuild with the new token
+    ref.invalidate(usersProvider);
+    ref.invalidate(propertiesProvider);
+    ref.invalidate(groupsProvider);
     state = AsyncData(user);
   }
 
@@ -436,7 +440,9 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
 
   @override
   Future<BoardState> build(String arg) async {
-    await ref.watch(currentUserProvider.future);
+    final user = await ref.watch(currentUserProvider.future);
+    // If the user is not logged in, return empty state and do not start timer.
+    if (user == null) return BoardState(columns: [], cardsByColumn: {});
     WidgetsBinding.instance.addObserver(this);
     _startTimer();
     ref.onDispose(() {
@@ -495,9 +501,15 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
   /// Pass [userAction] = true when triggered by a real change (not polling)
   /// so the audit page refreshes to show the new entry.
   Future<void> _reload({bool userAction = false}) async {
-    state = AsyncData(await _load());
-    if (userAction) {
-      ref.read(auditVersionProvider.notifier).update((v) => v + 1);
+    // Skip reload if session has no token (e.g. user logged out)
+    if (!ref.read(apiClientProvider).session.isAuthenticated) return;
+    try {
+      state = AsyncData(await _load());
+      if (userAction) {
+        ref.read(auditVersionProvider.notifier).update((v) => v + 1);
+      }
+    } catch (_) {
+      // Silently ignore polling errors — the next tick will retry.
     }
   }
 

@@ -30,12 +30,44 @@ type updateGroupRequest struct {
 }
 
 func (h *GroupsHandler) List(w http.ResponseWriter, r *http.Request) {
-	groups, err := h.Store.Groups().List(r.Context())
-	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "INTERNAL", "internal server error")
-		return
+	role := httpx.RoleFrom(r.Context())
+	actor := httpx.UserIDFrom(r.Context())
+
+	switch role {
+	case domain.RoleAdmin:
+		groups, err := h.Store.Groups().List(r.Context())
+		if err != nil {
+			httpx.WriteError(w, http.StatusInternalServerError, "INTERNAL", "internal server error")
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, groups)
+	case domain.RoleOwner:
+		// Owner sees the groups created by their supervisors (and any they
+		// created themselves). The chain comes from users.created_by.
+		supervisors, err := h.Store.Users().ListCreatedBy(r.Context(), actor, []domain.UserRole{domain.RoleSupervisor})
+		if err != nil {
+			httpx.WriteError(w, http.StatusInternalServerError, "INTERNAL", "internal server error")
+			return
+		}
+		creators := make([]string, 0, len(supervisors)+1)
+		creators = append(creators, actor)
+		for _, s := range supervisors { creators = append(creators, s.ID) }
+		groups, err := h.Store.Groups().ListByCreators(r.Context(), creators)
+		if err != nil {
+			httpx.WriteError(w, http.StatusInternalServerError, "INTERNAL", "internal server error")
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, groups)
+	case domain.RoleSupervisor:
+		groups, err := h.Store.Groups().ListByCreators(r.Context(), []string{actor})
+		if err != nil {
+			httpx.WriteError(w, http.StatusInternalServerError, "INTERNAL", "internal server error")
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, groups)
+	default:
+		httpx.WriteJSON(w, http.StatusOK, []domain.Group{})
 	}
-	httpx.WriteJSON(w, http.StatusOK, groups)
 }
 
 func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +83,7 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	g := &domain.Group{
 		ID:        uuid.NewString(),
 		Name:      req.Name,
+		CreatedBy: httpx.UserIDFrom(r.Context()),
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	}

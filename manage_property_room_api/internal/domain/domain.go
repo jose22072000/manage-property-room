@@ -173,6 +173,7 @@ type FieldDef struct {
 	Icon       string    `json:"icon,omitempty" db:"icon"`
 	OffLabel   string    `json:"offLabel,omitempty" db:"off_label"`
 	Position   int       `json:"position" db:"position"`
+	OwnerID    string    `json:"ownerId,omitempty" db:"owner_id"`
 }
 
 type Comment struct {
@@ -204,6 +205,7 @@ type AuditEvent struct {
 	ID         string    `json:"id" db:"id"`
 	ActorID    string    `json:"actorId" db:"actor_id"`
 	ActorName  string    `json:"actorName" db:"actor_name"`
+	ActorIP    string    `json:"actorIp" db:"actor_ip"`
 	Action     string    `json:"action" db:"action"`
 	Entity     string    `json:"entity" db:"entity"`
 	EntityID   string    `json:"entityId" db:"entity_id"`
@@ -218,6 +220,7 @@ type Group struct {
 	Name        string    `json:"name" db:"name"`
 	UserIDs     []string  `json:"userIds" db:"-"`
 	PropertyIDs []string  `json:"propertyIds" db:"-"`
+	CreatedBy   string    `json:"createdBy" db:"created_by"`
 	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt   time.Time `json:"updatedAt" db:"updated_at"`
 }

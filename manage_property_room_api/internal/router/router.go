@@ -14,6 +14,7 @@ import (
 	"github.com/jose/manage_property_room_api/internal/handlers"
 	"github.com/jose/manage_property_room_api/internal/httpx"
 	"github.com/jose/manage_property_room_api/internal/store"
+	"github.com/jose/manage_property_room_api/internal/webhooks"
 )
 
 type Deps struct {
@@ -32,20 +33,30 @@ func New(d Deps) http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 
+	allowAll := len(d.CORSOrigins) == 1 && d.CORSOrigins[0] == "*"
+	corsOrigins := d.CORSOrigins
+	if allowAll {
+		corsOrigins = []string{}
+	}
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   d.CORSOrigins,
+		AllowedOrigins:   corsOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 		AllowCredentials: false,
 		MaxAge:           300,
 	})
+	if allowAll {
+		corsHandler = cors.AllowAll()
+	}
 	r.Use(corsHandler.Handler)
 
 	authH := &handlers.AuthHandler{Svc: d.AuthSvc, Store: d.Store}
 	usersH := &handlers.UsersHandler{Store: d.Store}
 	propsH := &handlers.PropertiesHandler{Store: d.Store}
 	colsH := &handlers.ColumnsHandler{Store: d.Store}
-	cardsH := &handlers.CardsHandler{Store: d.Store}
+	dispatcher := webhooks.NewDispatcher(d.Store)
+	cardsH := &handlers.CardsHandler{Store: d.Store, Dispatcher: dispatcher}
+	webhooksH := &handlers.WebhooksHandler{Store: d.Store, Dispatcher: dispatcher}
 	fieldsH := &handlers.FieldsHandler{Store: d.Store}
 	commentsH := &handlers.CommentsHandler{Store: d.Store}
 	activityH := &handlers.ActivityHandler{Store: d.Store}
@@ -66,6 +77,8 @@ func New(d Deps) http.Handler {
 	// Public
 	r.Get("/health", handlers.Health)
 	r.Post("/auth/login", authH.Login)
+	// Public inbound webhook receiver — auth via path token.
+	r.Post("/hooks/inbound/{token}", webhooksH.ReceiveInbound)
 
 	// Authenticated
 	r.Group(func(r chi.Router) {
@@ -162,15 +175,16 @@ func New(d Deps) http.Handler {
 		r.Post("/archive/{id}/restore", archiveH.Restore)
 		r.Delete("/archive/{id}", archiveH.Delete)
 
-// Audit / Notifications — admin sees all, owner sees their properties
+// Audit / Notifications — admin only (owners and below do NOT see auditorías).
 			r.Group(func(r chi.Router) {
-				r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleOwner))
+				r.Use(httpx.RequireRole(domain.RoleAdmin))
 			r.Get("/audit", auditH.List)
+			r.Delete("/audit/{id}", auditH.Delete)
 		})
 
-		// Groups (admin, supervisor only — owner does not manage groups)
+		// Groups (admin, owner, supervisor — list scoped per role server-side)
 		r.Group(func(r chi.Router) {
-			r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleSupervisor))
+			r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleOwner, domain.RoleSupervisor))
 			r.Get("/groups", groupsH.List)
 			r.Post("/groups", groupsH.Create)
 			r.Get("/groups/{id}", groupsH.Get)
@@ -178,6 +192,23 @@ func New(d Deps) http.Handler {
 			r.Delete("/groups/{id}", groupsH.Delete)
 			r.Put("/groups/{id}/users", groupsH.SetUsers)
 			r.Put("/groups/{id}/properties", groupsH.SetProperties)
+		})
+
+		// Webhooks (admin/owner only)
+		r.Group(func(r chi.Router) {
+			r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleOwner))
+			r.Get("/webhooks", webhooksH.List)
+			r.Post("/webhooks", webhooksH.Create)
+			r.Get("/webhooks/{id}", webhooksH.Get)
+			r.Patch("/webhooks/{id}", webhooksH.Update)
+			r.Delete("/webhooks/{id}", webhooksH.Delete)
+			r.Get("/webhooks/{id}/deliveries", webhooksH.Deliveries)
+			r.Post("/webhooks/{id}/test", webhooksH.TestFire)
+
+			r.Get("/inbound-hooks", webhooksH.ListInbound)
+			r.Post("/inbound-hooks", webhooksH.CreateInbound)
+			r.Patch("/inbound-hooks/{id}", webhooksH.UpdateInbound)
+			r.Delete("/inbound-hooks/{id}", webhooksH.DeleteInbound)
 		})
 	})
 

@@ -65,6 +65,19 @@ type ArchiveHandler struct {
 func (h *ArchiveHandler) List(w http.ResponseWriter, r *http.Request) {
 	items, err := h.Store.Archive().List(r.Context())
 	if err != nil { httpx.HandleError(w, err); return }
+	role := httpx.RoleFrom(r.Context())
+	userID := httpx.UserIDFrom(r.Context())
+	allowed, all := accessiblePropertyIDs(r.Context(), h.Store, userID, role)
+	if !all {
+		filtered := make([]domain.ArchiveItem, 0, len(items))
+		for _, it := range items {
+			pid, _ := it.Payload["propertyId"].(string)
+			if _, ok := allowed[pid]; ok {
+				filtered = append(filtered, it)
+			}
+		}
+		items = filtered
+	}
 	httpx.WriteJSON(w, http.StatusOK, items)
 }
 

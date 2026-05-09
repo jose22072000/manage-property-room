@@ -150,19 +150,20 @@ class _AppHeader extends StatelessWidget {
                 ],
                 const Spacer(),
                 const SizedBox(width: 8),
-                if (user != null && Policy.canBoard(user!, BoardAction.manageUsers))
+                if (user != null && Policy.visibleNavItems(user!).contains(NavItem.audit))
                   _HeaderIconBtn(
                     icon: Icons.history_outlined,
                     tooltip: 'Auditoría',
                     onTap: () => context.go('/audit'),
                     active: location.startsWith('/audit'),
                   ),
-                _HeaderIconBtn(
-                  icon: Icons.settings_outlined,
-                  tooltip: 'Configuración',
-                  onTap: () => context.go('/settings'),
-                  active: location.startsWith('/settings'),
-                ),
+                if (user != null && Policy.visibleNavItems(user!).contains(NavItem.settings))
+                  _HeaderIconBtn(
+                    icon: Icons.settings_outlined,
+                    tooltip: 'Configuración',
+                    onTap: () => context.go('/settings'),
+                    active: location.startsWith('/settings'),
+                  ),
                 if (user case final u? when Policy.canSeeNotifications(u))
                   _NotifBell(location: location),
                 UserSelector(compact: isMobile),
@@ -176,10 +177,18 @@ class _AppHeader extends StatelessWidget {
 }
 
 class _NavLinkDef {
-  const _NavLinkDef(this.label, this.path);
+  const _NavLinkDef(this.label, this.path, this.item);
   final String label;
   final String path;
+  final NavItem item;
 }
+
+const _kNavLinks = <_NavLinkDef>[
+  _NavLinkDef('Propiedades', '/', NavItem.inicio),
+  _NavLinkDef('Por hacer', '/todo', NavItem.todo),
+  _NavLinkDef('Archivo', '/archive', NavItem.archive),
+  _NavLinkDef('Usuarios', '/users', NavItem.users),
+];
 
 class _NavLinks extends StatelessWidget {
   const _NavLinks({required this.location, required this.user});
@@ -188,16 +197,10 @@ class _NavLinks extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canAdmin = user != null && Policy.canBoard(user!, BoardAction.manageUsers);
-    final canUserMgmt = user != null && Policy.canSeeUserManagement(user!);
-    final items = <_NavLinkDef>[
-      const _NavLinkDef('Propiedades', '/'),
-      const _NavLinkDef('Por hacer', '/todo'),
-      const _NavLinkDef('Archivo', '/archive'),
-      if (canUserMgmt) const _NavLinkDef('Usuarios', '/users'),
-    ];
-    // silence unused warning
-    canAdmin;
+    if (user == null) return const SizedBox.shrink();
+    final allowed = Policy.visibleNavItems(user!);
+    final items = _kNavLinks.where((d) => allowed.contains(d.item)).toList();
+    if (items.isEmpty) return const SizedBox.shrink();
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: items.map((item) {
@@ -230,12 +233,20 @@ class _NavLinks extends StatelessWidget {
 }
 
 class _BNavItem {
-  const _BNavItem(this.label, this.icon, this.activeIcon, this.route);
+  const _BNavItem(this.label, this.icon, this.activeIcon, this.route, this.item);
   final String label;
   final IconData icon;
   final IconData activeIcon;
   final String route;
+  final NavItem item;
 }
+
+const _kBNavItems = <_BNavItem>[
+  _BNavItem('Inicio', Icons.home_outlined, Icons.home, '/', NavItem.inicio),
+  _BNavItem('Por hacer', Icons.checklist_outlined, Icons.checklist, '/todo', NavItem.todo),
+  _BNavItem('Archivo', Icons.archive_outlined, Icons.archive, '/archive', NavItem.archive),
+  _BNavItem('Usuarios', Icons.group_outlined, Icons.group, '/users', NavItem.users),
+];
 
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.user, required this.location});
@@ -244,14 +255,12 @@ class _BottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canAdmin = user != null && Policy.canBoard(user!, BoardAction.manageUsers);
-    final canUserMgmt = user != null && Policy.canSeeUserManagement(user!);
-    final items = <_BNavItem>[
-      const _BNavItem('Inicio', Icons.home_outlined, Icons.home, '/'),
-      const _BNavItem('Por hacer', Icons.checklist_outlined, Icons.checklist, '/todo'),
-      const _BNavItem('Archivo', Icons.archive_outlined, Icons.archive, '/archive'),
-      if (canUserMgmt) const _BNavItem('Usuarios', Icons.group_outlined, Icons.group, '/users'),
-    ];
+    if (user == null) return const SizedBox.shrink();
+    final allowed = Policy.visibleNavItems(user!);
+    final items = _kBNavItems.where((i) => allowed.contains(i.item)).toList();
+    // Workers with only Inicio + Settings: don't show a bottom nav with a
+    // single item — just hide it. They navigate via the header.
+    if (items.length <= 1) return const SizedBox.shrink();
     int idx = items.indexWhere((i) => i.route == location);
     if (idx < 0) idx = 0;
     return NavigationBar(

@@ -21,6 +21,9 @@ type Store interface {
 	Audit() AuditRepo
 	Groups() GroupRepo
 	PropertySupervisors() PropertySupervisorRepo
+	Webhooks() WebhookRepo
+	InboundHooks() InboundHookRepo
+	WebhookDeliveries() WebhookDeliveryRepo
 	Close() error
 }
 
@@ -71,6 +74,7 @@ type FieldRepo interface {
 	Create(ctx context.Context, f *domain.FieldDef) error
 	GetByID(ctx context.Context, id string) (*domain.FieldDef, error)
 	List(ctx context.Context) ([]domain.FieldDef, error)
+	ListByOwner(ctx context.Context, ownerID string) ([]domain.FieldDef, error)
 	Update(ctx context.Context, f *domain.FieldDef) error
 	Delete(ctx context.Context, id string) error
 	Reorder(ctx context.Context, orderedIDs []string) error
@@ -98,6 +102,7 @@ type AuditRepo interface {
 	Create(ctx context.Context, e *domain.AuditEvent) error
 	List(ctx context.Context, limit int) ([]domain.AuditEvent, error)
 	ListByPropertyIDs(ctx context.Context, propertyIDs []string, limit int) ([]domain.AuditEvent, error)
+	Delete(ctx context.Context, id string) error
 }
 
 type GroupRepo interface {
@@ -110,10 +115,35 @@ type GroupRepo interface {
 	SetProperties(ctx context.Context, groupID string, propertyIDs []string) error
 	ListPropertiesForUser(ctx context.Context, userID string) ([]string, error)
 	ListForSupervisor(ctx context.Context, supervisorID string) ([]domain.Group, error)
+	ListByCreators(ctx context.Context, creatorIDs []string) ([]domain.Group, error)
 }
 
 type PropertySupervisorRepo interface {
 	SetSupervisors(ctx context.Context, propertyID string, supervisorIDs []string) error
 	ListForProperty(ctx context.Context, propertyID string) ([]string, error)
 	ListPropertiesForSupervisor(ctx context.Context, supervisorID string) ([]string, error)
+}
+
+type WebhookRepo interface {
+	Create(ctx context.Context, w *domain.Webhook) error
+	GetByID(ctx context.Context, id string) (*domain.Webhook, error)
+	List(ctx context.Context) ([]domain.Webhook, error)
+	ListActiveForEvent(ctx context.Context, event, propertyID string) ([]domain.Webhook, error)
+	Update(ctx context.Context, w *domain.Webhook) error
+	Delete(ctx context.Context, id string) error
+}
+
+type InboundHookRepo interface {
+	Create(ctx context.Context, h *domain.InboundHook) error
+	GetByID(ctx context.Context, id string) (*domain.InboundHook, error)
+	GetByToken(ctx context.Context, token string) (*domain.InboundHook, error)
+	List(ctx context.Context) ([]domain.InboundHook, error)
+	Update(ctx context.Context, h *domain.InboundHook) error
+	Delete(ctx context.Context, id string) error
+}
+
+type WebhookDeliveryRepo interface {
+	Create(ctx context.Context, d *domain.WebhookDelivery) error
+	Update(ctx context.Context, d *domain.WebhookDelivery) error
+	ListByWebhook(ctx context.Context, webhookID string, limit int) ([]domain.WebhookDelivery, error)
 }

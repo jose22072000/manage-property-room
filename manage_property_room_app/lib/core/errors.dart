@@ -24,6 +24,9 @@ String friendlyError(Object e) {
       }
       return 'Error de red. Comprueba tu conexión e inténtalo de nuevo.';
     }
+    if (e.code == 'INVALID_CREDENTIALS') {
+      return 'Email o contraseña incorrectos.';
+    }
     if (e.statusCode == 401 || e.code == 'UNAUTHORIZED') {
       return 'Tu sesión ha expirado. Inicia sesión de nuevo.';
     }

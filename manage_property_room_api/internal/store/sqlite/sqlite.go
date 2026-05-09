@@ -34,6 +34,9 @@ type Store struct {
 	audit      *auditRepo
 	groups     *groupRepo
 	propertySupervisors *propertySupervisorRepo
+	webhooks            *webhookRepo
+	inboundHooks        *inboundHookRepo
+	webhookDeliveries   *webhookDeliveryRepo
 }
 
 // Open opens a SQLite DB at dsn (file path or ":memory:"), applies pragmas,
@@ -69,6 +72,9 @@ func Open(dsn string) (*Store, error) {
 	s.audit = &auditRepo{db: db}
 	s.groups = &groupRepo{db: db}
 	s.propertySupervisors = &propertySupervisorRepo{db: db}
+	s.webhooks = &webhookRepo{db: db}
+	s.inboundHooks = &inboundHookRepo{db: db}
+	s.webhookDeliveries = &webhookDeliveryRepo{db: db}
 	return s, nil
 }
 
@@ -103,3 +109,6 @@ func (s *Store) Archive() store.ArchiveRepo     { return s.archive }
 func (s *Store) Audit() store.AuditRepo         { return s.audit }
 func (s *Store) Groups() store.GroupRepo        { return s.groups }
 func (s *Store) PropertySupervisors() store.PropertySupervisorRepo { return s.propertySupervisors }
+func (s *Store) Webhooks() store.WebhookRepo                       { return s.webhooks }
+func (s *Store) InboundHooks() store.InboundHookRepo               { return s.inboundHooks }
+func (s *Store) WebhookDeliveries() store.WebhookDeliveryRepo      { return s.webhookDeliveries }
