@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jose/manage_property_room_api/internal/domain"
+	"github.com/jose/manage_property_room_api/internal/events"
 	"github.com/jose/manage_property_room_api/internal/httpx"
 	"github.com/jose/manage_property_room_api/internal/store"
 	"github.com/jose/manage_property_room_api/internal/webhooks"
@@ -75,6 +76,7 @@ func (h *CardsHandler) CreateForColumn(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "create", "card", c.ID, c.Title, c.PropertyID)
+	events.Publish(events.Event{Type: "card.created", Entity: "card", EntityID: c.ID, PropertyID: c.PropertyID, ActorID: httpx.UserIDFrom(r.Context())})
 	h.fire(domain.WebhookEventCardCreated, c, nil)
 	httpx.WriteJSON(w, http.StatusCreated, c)
 }
@@ -111,6 +113,7 @@ func (h *CardsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "update", "card", c.ID, c.Title, c.PropertyID)
+	events.Publish(events.Event{Type: "card.updated", Entity: "card", EntityID: c.ID, PropertyID: c.PropertyID, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -120,6 +123,7 @@ func (h *CardsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "delete", "card", id, "")
+	events.Publish(events.Event{Type: "card.deleted", Entity: "card", EntityID: id, ActorID: httpx.UserIDFrom(r.Context())})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -140,6 +144,7 @@ func (h *CardsHandler) Move(w http.ResponseWriter, r *http.Request) {
 	c, err := h.Store.Cards().GetByID(r.Context(), id)
 	if err != nil { httpx.HandleError(w, err); return }
 	recordAudit(r.Context(), h.Store, "move", "card", id, c.Title, c.PropertyID)
+	events.Publish(events.Event{Type: "card.moved", Entity: "card", EntityID: c.ID, PropertyID: c.PropertyID, ActorID: httpx.UserIDFrom(r.Context())})
 	h.fire(domain.WebhookEventCardMoved, c, map[string]any{"targetColumnId": req.TargetColumnID, "position": req.Position})
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
@@ -157,6 +162,7 @@ func (h *CardsHandler) ToggleDone(w http.ResponseWriter, r *http.Request) {
 	recordAudit(r.Context(), h.Store, "update", "card", c.ID, c.Title+" → "+status, c.PropertyID)
 	evt := domain.WebhookEventCardUncompleted
 	if c.IsDone { evt = domain.WebhookEventCardCompleted }
+	events.Publish(events.Event{Type: "card.updated", Entity: "card", EntityID: c.ID, PropertyID: c.PropertyID, ActorID: httpx.UserIDFrom(r.Context())})
 	h.fire(evt, c, nil)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
@@ -169,6 +175,7 @@ func (h *CardsHandler) Archive(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "archive", "card", c.ID, c.Title, c.PropertyID)
+	events.Publish(events.Event{Type: "card.archived", Entity: "card", EntityID: c.ID, PropertyID: c.PropertyID, ActorID: httpx.UserIDFrom(r.Context())})
 	h.fire(domain.WebhookEventCardArchived, c, nil)
 	httpx.WriteJSON(w, http.StatusOK, c)
 }

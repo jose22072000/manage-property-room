@@ -8,6 +8,7 @@ import (
 
 	"github.com/jose/manage_property_room_api/internal/auth"
 	"github.com/jose/manage_property_room_api/internal/domain"
+	"github.com/jose/manage_property_room_api/internal/events"
 	"github.com/jose/manage_property_room_api/internal/httpx"
 	"github.com/jose/manage_property_room_api/internal/store"
 )
@@ -74,6 +75,7 @@ func (h *UsersHandler) List(w http.ResponseWriter, r *http.Request) {
 		users, err = h.Store.Users().List(ctx)
 	}
 	if err != nil { httpx.HandleError(w, err); return }
+	if users == nil { users = []domain.User{} }
 	httpx.WriteJSON(w, http.StatusOK, users)
 }
 
@@ -104,6 +106,7 @@ func (h *UsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "create", "user", u.ID, u.Name)
+	events.Publish(events.Event{Type: "user.created", Entity: "user", EntityID: u.ID, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusCreated, u)
 }
 
@@ -124,6 +127,7 @@ func (h *UsersHandler) Update(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "update", "user", u.ID, u.Name)
+	events.Publish(events.Event{Type: "user.updated", Entity: "user", EntityID: u.ID, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusOK, u)
 }
 
@@ -136,6 +140,7 @@ func (h *UsersHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	name := id
 	if u != nil { name = u.Name }
 	recordAudit(r.Context(), h.Store, "delete", "user", id, name)
+	events.Publish(events.Event{Type: "user.deleted", Entity: "user", EntityID: id, ActorID: httpx.UserIDFrom(r.Context())})
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -3,7 +3,6 @@ package router
 import (
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -31,7 +30,8 @@ func New(d Deps) http.Handler {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(30 * time.Second))
+	// Note: Timeout is NOT added globally — SSE /events needs unbounded duration.
+	// Individual handlers that need a timeout should set it per-request.
 
 	allowAll := len(d.CORSOrigins) == 1 && d.CORSOrigins[0] == "*"
 	corsOrigins := d.CORSOrigins
@@ -63,6 +63,7 @@ func New(d Deps) http.Handler {
 	archiveH := &handlers.ArchiveHandler{Store: d.Store}
 	auditH := &handlers.AuditHandler{Store: d.Store}
 	groupsH := &handlers.GroupsHandler{Store: d.Store}
+	eventsH := &handlers.EventsHandler{}
 
 	uploadDir := "/data/uploads"
 	baseURL := os.Getenv("BASE_URL")
@@ -89,6 +90,9 @@ func New(d Deps) http.Handler {
 		r.Post("/auth/change-password", authH.ChangePassword)
 
 		r.Get("/me", usersH.Me)
+
+		// SSE real-time event stream — all authenticated roles.
+		r.Get("/events", eventsH.Stream)
 
 		// File upload (admin/owner only)
 		r.Group(func(r chi.Router) {
@@ -129,9 +133,9 @@ func New(d Deps) http.Handler {
 				r.Use(httpx.RequireRole(domain.RoleAdmin))
 				r.Post("/properties/{id}/assign-owner", propsH.AssignOwner)		})
 
-		// Columns — structure mutations require admin or operator
+		// Columns — structure mutations require admin / owner / supervisor / operator
 		r.Group(func(r chi.Router) {
-			r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleOperator))
+			r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleOwner, domain.RoleSupervisor, domain.RoleOperator))
 			r.Post("/columns/reorder", colsH.Reorder)
 			r.Post("/properties/{id}/columns", colsH.Create)
 			r.Patch("/columns/{id}", colsH.Update)
@@ -175,10 +179,13 @@ func New(d Deps) http.Handler {
 		r.Post("/archive/{id}/restore", archiveH.Restore)
 		r.Delete("/archive/{id}", archiveH.Delete)
 
-// Audit / Notifications — admin only (owners and below do NOT see auditorías).
-			r.Group(func(r chi.Router) {
-				r.Use(httpx.RequireRole(domain.RoleAdmin))
+		// Audit / Notifications — admin sees all; owner sees own properties; supervisor sees assigned properties.
+		r.Group(func(r chi.Router) {
+			r.Use(httpx.RequireRole(domain.RoleAdmin, domain.RoleOwner, domain.RoleSupervisor))
 			r.Get("/audit", auditH.List)
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(httpx.RequireRole(domain.RoleAdmin))
 			r.Delete("/audit/{id}", auditH.Delete)
 		})
 

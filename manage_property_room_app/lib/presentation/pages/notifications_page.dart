@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../application/notifiers/notifiers.dart';
 import '../../application/providers/api_providers.dart';
 import '../../core/errors.dart';
+import '../../data/remote/sse_client.dart';
 import '../../domain/domain.dart';
 
 // ── Local "last-read" timestamp stored in Hive ───────────────────────────────
@@ -27,16 +28,34 @@ Future<void> _saveLastRead(DateTime dt) async {
 
 // ── Providers ────────────────────────────────────────────────────────────────
 
-/// Version counter — incremented to force a re-fetch.
-final notifVersionProvider = StateProvider<int>((ref) => 0);
+/// Raw list of audit events used as notifications. Reloads whenever the
+/// server pushes an SSE event (any entity), so new actions appear instantly
+/// without any polling timer.
+class NotificationsNotifier extends AsyncNotifier<List<AuditEvent>> {
+  @override
+  Future<List<AuditEvent>> build() async {
+    ref.watch(auditVersionProvider); // full rebuild when board actions happen
+    final user = await ref.watch(currentUserProvider.future);
+    if (user == null) return [];
+    // React to any server event — new audit records arrive with every mutation.
+    ref.listen<AsyncValue<SseEvent>>(sseProvider, (_, next) {
+      next.whenData((_) => _silentRefresh());
+    });
+    return ref.read(auditApiProvider).list(limit: 500);
+  }
 
-/// Raw list of audit events used as notifications.
-final notificationsProvider = FutureProvider<List<AuditEvent>>((ref) async {
-  ref.watch(notifVersionProvider);
-  ref.watch(auditVersionProvider); // also refresh when board actions happen
-  await ref.watch(currentUserProvider.future);
-  return ref.read(auditApiProvider).list(limit: 500);
-});
+  Future<void> _silentRefresh() async {
+    try {
+      final list = await ref.read(auditApiProvider).list(limit: 500);
+      state = AsyncData(list);
+    } catch (_) {}
+  }
+
+  Future<void> forceRefresh() => _silentRefresh();
+}
+
+final notificationsProvider =
+    AsyncNotifierProvider<NotificationsNotifier, List<AuditEvent>>(NotificationsNotifier.new);
 
 /// Number of unread notifications (events newer than lastRead).
 final unreadCountProvider = FutureProvider<int>((ref) async {
@@ -118,7 +137,7 @@ class _NotificationsPageState extends ConsumerState<NotificationsPage> {
             icon: const Icon(Icons.refresh, size: 20),
             tooltip: 'Actualizar',
             onPressed: () {
-              ref.invalidate(notificationsProvider);
+              ref.read(notificationsProvider.notifier).forceRefresh();
             },
           ),
           const SizedBox(width: 8),

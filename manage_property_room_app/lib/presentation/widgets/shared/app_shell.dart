@@ -21,20 +21,13 @@ class AppShell extends ConsumerStatefulWidget {
 }
 
 class _AppShellState extends ConsumerState<AppShell> {
-  Timer? _pollTimer;
-
   @override
   void initState() {
     super.initState();
-    // Poll for remote audit events every 30 s
-    _pollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      ref.read(notifVersionProvider.notifier).update((v) => v + 1);
-    });
   }
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
     super.dispose();
   }
 

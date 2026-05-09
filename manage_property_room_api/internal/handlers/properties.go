@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jose/manage_property_room_api/internal/domain"
+	"github.com/jose/manage_property_room_api/internal/events"
 	"github.com/jose/manage_property_room_api/internal/httpx"
 	"github.com/jose/manage_property_room_api/internal/store"
 )
@@ -86,6 +87,7 @@ func (h *PropertiesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "create", "property", p.ID, p.Name)
+	events.Publish(events.Event{Type: "property.created", Entity: "property", EntityID: p.ID, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusCreated, p)
 }
 
@@ -108,6 +110,7 @@ func (h *PropertiesHandler) Update(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "update", "property", p.ID, p.Name)
+	events.Publish(events.Event{Type: "property.updated", Entity: "property", EntityID: p.ID, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusOK, p)
 }
 
@@ -120,6 +123,7 @@ func (h *PropertiesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "delete", "property", id, pName)
+	events.Publish(events.Event{Type: "property.deleted", Entity: "property", EntityID: id, ActorID: httpx.UserIDFrom(r.Context())})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -203,7 +207,11 @@ func (h *PropertiesHandler) AssignSupervisors(w http.ResponseWriter, r *http.Req
 	if err := h.Store.PropertySupervisors().SetSupervisors(r.Context(), id, req.SupervisorIDs); err != nil {
 		httpx.HandleError(w, err); return
 	}
-	// For each supervisor, also update their ListBySupervisor so they can see the property.
+	p, _ := h.Store.Properties().GetByID(r.Context(), id)
+	pName := id
+	if p != nil { pName = p.Name }
+	recordAudit(r.Context(), h.Store, "assign-supervisors", "property", id, pName)
+	events.Publish(events.Event{Type: "property.supervisors_updated", Entity: "property", EntityID: id, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

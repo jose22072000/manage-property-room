@@ -278,7 +278,7 @@ func (r *propertyRepo) List(ctx context.Context) ([]domain.Property, error) {
 	}
 	out := make([]domain.Property, 0, len(rows))
 	for _, row := range rows { out = append(out, *row.toDomain()) }
-	return out, nil
+	return enrichSupervisorIDs(ctx, r.db, out)
 }
 
 func (r *propertyRepo) Update(ctx context.Context, p *domain.Property) error {
@@ -301,7 +301,7 @@ func (r *propertyRepo) ListByOwner(ctx context.Context, ownerID string) ([]domai
 	}
 	out := make([]domain.Property, 0, len(rows))
 	for _, row := range rows { out = append(out, *row.toDomain()) }
-	return out, nil
+	return enrichSupervisorIDs(ctx, r.db, out)
 }
 
 func (r *propertyRepo) ListBySupervisor(ctx context.Context, supervisorID string) ([]domain.Property, error) {
@@ -318,13 +318,13 @@ func (r *propertyRepo) ListBySupervisor(ctx context.Context, supervisorID string
 	for i, id := range ids { placeholders[i] = "?"; args[i] = id }
 	q := fmt.Sprintf(`SELECT * FROM properties WHERE id IN (%s) ORDER BY position, created_at`,
 		strings.Join(placeholders, ","))
-	var rows []propertyRow
-	if err := r.db.SelectContext(ctx, &rows, q, args...); err != nil {
+	var propRows []propertyRow
+	if err := r.db.SelectContext(ctx, &propRows, q, args...); err != nil {
 		return nil, err
 	}
-	out := make([]domain.Property, 0, len(rows))
-	for _, row := range rows { out = append(out, *row.toDomain()) }
-	return out, nil
+	out := make([]domain.Property, 0, len(propRows))
+	for _, row := range propRows { out = append(out, *row.toDomain()) }
+	return enrichSupervisorIDs(ctx, r.db, out)
 }
 
 func (r *propertyRepo) Delete(ctx context.Context, id string) error {
@@ -335,6 +335,37 @@ func (r *propertyRepo) Delete(ctx context.Context, id string) error {
 }
 
 // ── columns ──────────────────────────────────────────────────────────────────
+
+// enrichSupervisorIDs loads supervisor IDs for a slice of properties in a
+// single query and sets SupervisorIDs on each property.
+func enrichSupervisorIDs(ctx context.Context, db *sqlx.DB, props []domain.Property) ([]domain.Property, error) {
+	if len(props) == 0 {
+		return props, nil
+	}
+	type psRow struct {
+		PropertyID   string `db:"property_id"`
+		SupervisorID string `db:"supervisor_id"`
+	}
+	ids := make([]any, len(props))
+	for i, p := range props { ids[i] = p.ID }
+	placeholders := make([]string, len(ids))
+	for i := range ids { placeholders[i] = "?" }
+	q := fmt.Sprintf(`SELECT property_id, supervisor_id FROM property_supervisors WHERE property_id IN (%s)`,
+		strings.Join(placeholders, ","))
+	var psRows []psRow
+	if err := db.SelectContext(ctx, &psRows, q, ids...); err != nil {
+		return nil, err
+	}
+	m := make(map[string][]string, len(props))
+	for _, r := range psRows {
+		m[r.PropertyID] = append(m[r.PropertyID], r.SupervisorID)
+	}
+	for i := range props {
+		props[i].SupervisorIDs = m[props[i].ID]
+		if props[i].SupervisorIDs == nil { props[i].SupervisorIDs = []string{} }
+	}
+	return props, nil
+}
 
 type columnRepo struct{ db *sqlx.DB }
 

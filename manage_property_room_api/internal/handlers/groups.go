@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jose/manage_property_room_api/internal/domain"
+	"github.com/jose/manage_property_room_api/internal/events"
 	"github.com/jose/manage_property_room_api/internal/httpx"
 	"github.com/jose/manage_property_room_api/internal/store"
 )
@@ -99,6 +100,7 @@ func (h *GroupsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	g.UserIDs = req.UserIDs
 	g.PropertyIDs = req.PropertyIDs
+	events.Publish(events.Event{Type: "group.created", Entity: "group", EntityID: g.ID, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusCreated, g)
 }
 
@@ -139,6 +141,7 @@ func (h *GroupsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		_ = h.Store.Groups().SetProperties(r.Context(), id, *req.PropertyIDs)
 		g.PropertyIDs = *req.PropertyIDs
 	}
+	events.Publish(events.Event{Type: "group.updated", Entity: "group", EntityID: id, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusOK, g)
 }
 
@@ -148,6 +151,7 @@ func (h *GroupsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err)
 		return
 	}
+	events.Publish(events.Event{Type: "group.deleted", Entity: "group", EntityID: id, ActorID: httpx.UserIDFrom(r.Context())})
 	w.WriteHeader(http.StatusNoContent)
 }
 

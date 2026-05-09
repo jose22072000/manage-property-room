@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jose/manage_property_room_api/internal/domain"
+	"github.com/jose/manage_property_room_api/internal/events"
 	"github.com/jose/manage_property_room_api/internal/httpx"
 	"github.com/jose/manage_property_room_api/internal/store"
 )
@@ -56,6 +57,7 @@ func (h *ColumnsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "create", "column", c.ID, c.Title)
+	events.Publish(events.Event{Type: "column.created", Entity: "column", EntityID: c.ID, PropertyID: c.PropertyID, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusCreated, c)
 }
 
@@ -78,6 +80,7 @@ func (h *ColumnsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "update", "column", c.ID, c.Title)
+	events.Publish(events.Event{Type: "column.updated", Entity: "column", EntityID: c.ID, PropertyID: c.PropertyID, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
@@ -89,6 +92,7 @@ func (h *ColumnsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "delete", "column", id, col.Title)
+	events.Publish(events.Event{Type: "column.deleted", Entity: "column", EntityID: id, PropertyID: col.PropertyID, ActorID: httpx.UserIDFrom(r.Context())})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -160,6 +164,7 @@ func (h *ColumnsHandler) Move(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "move", "column", c.ID, c.Title)
+	events.Publish(events.Event{Type: "column.updated", Entity: "column", EntityID: c.ID, PropertyID: c.PropertyID, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -6,6 +5,7 @@ import '../../core/errors.dart';
 import '../../domain/domain.dart';
 import '../../permissions/policy.dart';
 import '../../data/remote/api_client.dart';
+import '../../data/remote/sse_client.dart';
 import '../providers/repo_providers.dart';
 import '../providers/api_providers.dart';
 
@@ -14,6 +14,27 @@ const _uuid = Uuid();
 /// Incremented whenever a board action completes. The audit page watches this
 /// to refresh its list automatically without a manual reload.
 final auditVersionProvider = StateProvider<int>((ref) => 0);
+
+// ══════════════════════════════════════════
+//  SSE real-time event stream
+// ══════════════════════════════════════════
+
+/// Provides a continuous stream of [SseEvent]s from the backend.
+/// The stream is active only while a user is logged in; it disconnects
+/// automatically on logout (the provider rebuilds when currentUserProvider
+/// changes because it watches it).
+///
+/// All notifiers that need real-time updates listen to this provider instead
+/// of running their own polling timers.
+final sseProvider = StreamProvider<SseEvent>((ref) {
+  final user = ref.watch(currentUserProvider).valueOrNull;
+  if (user == null) return const Stream.empty();
+  final client = ref.watch(apiClientProvider);
+  return connectSse(
+    baseUrl: client.baseUrl,
+    getToken: () => client.session.token ?? '',
+  );
+});
 
 /// Returns a human-readable Spanish message from any exception.
 String _errMsg(Object e) => friendlyError(e);
@@ -147,10 +168,9 @@ class CurrentUserNotifier extends AsyncNotifier<AppUser?> {
   Future<void> setUser(AppUser user) async {
     final settings = ref.read(settingsRepoProvider);
     await settings.setCurrentUserId(user.id);
-    // Invalidate all API-backed providers so they rebuild with the new token
-    ref.invalidate(usersProvider);
-    ref.invalidate(propertiesProvider);
-    ref.invalidate(groupsProvider);
+    // Setting state triggers automatic rebuilds in all providers that
+    // watch currentUserProvider — no manual invalidation needed (which
+    // would cause a CircularDependencyError in Riverpod debug mode).
     state = AsyncData(user);
   }
 
@@ -173,13 +193,21 @@ class UsersNotifier extends AsyncNotifier<List<AppUser>> {
   Future<List<AppUser>> build() async {
     final user = await ref.watch(currentUserProvider.future);
     if (user == null) return [];
+    // Reload whenever the server pushes a user mutation event.
+    ref.listen<AsyncValue<SseEvent>>(sseProvider, (_, next) {
+      next.whenData((e) {
+        if (e.entity == 'user') reload();
+      });
+    });
     final list = await ref.read(usersApiProvider).getAll();
     return list.map(AppUser.fromJson).toList();
   }
 
   Future<void> reload() async {
-    final list = await ref.read(usersApiProvider).getAll();
-    state = AsyncData(list.map(AppUser.fromJson).toList());
+    try {
+      final list = await ref.read(usersApiProvider).getAll();
+      state = AsyncData(list.map(AppUser.fromJson).toList());
+    } catch (_) {}
   }
 
   /// Create a new user via the API. Requires [email] and [password].
@@ -255,16 +283,24 @@ class PropertiesNotifier extends AsyncNotifier<List<Property>> {
   Future<List<Property>> build() async {
     final user = await ref.watch(currentUserProvider.future);
     if (user == null) return [];
+    // Reload when server pushes a property or supervisor-assignment event.
+    ref.listen<AsyncValue<SseEvent>>(sseProvider, (_, next) {
+      next.whenData((e) {
+        if (e.entity == 'property') reload();
+      });
+    });
     final list = await ref.read(propertiesApiProvider).getAll();
     return list.map(Property.fromJson).toList()
       ..sort((a, b) => a.code.compareTo(b.code));
   }
 
   Future<void> reload() async {
-    final list = await ref.read(propertiesApiProvider).getAll();
-    state = AsyncData(
-      list.map(Property.fromJson).toList()..sort((a, b) => a.code.compareTo(b.code)),
-    );
+    try {
+      final list = await ref.read(propertiesApiProvider).getAll();
+      state = AsyncData(
+        list.map(Property.fromJson).toList()..sort((a, b) => a.code.compareTo(b.code)),
+      );
+    } catch (_) {}
   }
 
   Future<void> saveProperty(Property p) async {
@@ -313,23 +349,25 @@ final visiblePropertiesProvider = Provider<List<Property>>((ref) {
 // ══════════════════════════════════════════
 
 class FieldsNotifier extends AsyncNotifier<List<FieldDef>> {
-  Timer? _timer;
-
   @override
   Future<List<FieldDef>> build() async {
     final user = await ref.watch(currentUserProvider.future);
     if (user == null) return [];
-    // Poll every 10 s so field config changes made on web appear in mobile.
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _reload());
-    ref.onDispose(() => _timer?.cancel());
+    // Reload when a field mutation event arrives from the server.
+    ref.listen<AsyncValue<SseEvent>>(sseProvider, (_, next) {
+      next.whenData((e) {
+        if (e.entity == 'field') _reload();
+      });
+    });
     final list = await ref.read(fieldsApiProvider).getAll();
     return list.map(FieldDef.fromJson).toList();
   }
 
   Future<void> _reload() async {
-    final list = await ref.read(fieldsApiProvider).getAll();
-    state = AsyncData(list.map(FieldDef.fromJson).toList());
+    try {
+      final list = await ref.read(fieldsApiProvider).getAll();
+      state = AsyncData(list.map(FieldDef.fromJson).toList());
+    } catch (_) {}
   }
 
   /// Invalidates all board providers so boards re-fetch after field changes.
@@ -436,37 +474,30 @@ class BoardState {
 class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
     with WidgetsBindingObserver {
   String get propertyId => arg;
-  Timer? _timer;
 
   @override
   Future<BoardState> build(String arg) async {
     final user = await ref.watch(currentUserProvider.future);
-    // If the user is not logged in, return empty state and do not start timer.
     if (user == null) return BoardState(columns: [], cardsByColumn: {});
     WidgetsBinding.instance.addObserver(this);
-    _startTimer();
-    ref.onDispose(() {
-      WidgetsBinding.instance.removeObserver(this);
-      _timer?.cancel();
-    });
-    return _load();
-  }
+    ref.onDispose(() => WidgetsBinding.instance.removeObserver(this));
 
-  void _startTimer() {
-    _timer?.cancel();
-    // Poll every 10 s so all devices see changes promptly
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _reload());
+    // Listen for SSE events scoped to this property (card/column mutations).
+    ref.listen<AsyncValue<SseEvent>>(sseProvider, (_, next) {
+      next.whenData((e) {
+        final relevant = (e.entity == 'card' || e.entity == 'column') &&
+            (e.propertyId.isEmpty || e.propertyId == propertyId);
+        if (relevant) _reload();
+      });
+    });
+
+    return _load();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
-    if (s == AppLifecycleState.resumed) {
-      _reload(); // immediate refresh when foregrounded
-      _startTimer();
-    } else if (s == AppLifecycleState.paused ||
-        s == AppLifecycleState.detached) {
-      _timer?.cancel(); // stop polling when backgrounded
-    }
+    // Reload immediately when coming back from background.
+    if (s == AppLifecycleState.resumed) _reload();
   }
 
   // ── Load from API ─────────────────────────────────
@@ -866,7 +897,20 @@ final archiveProvider =
 
 class GroupsNotifier extends AsyncNotifier<List<Group>> {
   @override
-  Future<List<Group>> build() => ref.read(groupsApiProvider).list();
+  Future<List<Group>> build() async {
+    // Reload when the server pushes a group mutation event.
+    ref.listen<AsyncValue<SseEvent>>(sseProvider, (_, next) {
+      next.whenData((e) async {
+        if (e.entity == 'group') {
+          try {
+            final list = await ref.read(groupsApiProvider).list();
+            state = AsyncData(list);
+          } catch (_) {}
+        }
+      });
+    });
+    return ref.read(groupsApiProvider).list();
+  }
 
   Future<void> create(String name) async {
     final g = await ref.read(groupsApiProvider).create(name: name);

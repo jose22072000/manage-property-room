@@ -178,10 +178,11 @@ class Policy {
   }
 
   /// Whether [user] can see the Notifications page (audit events).
-  /// Per spec: only admin can. Owners do NOT see global notifications;
-  /// supervisors only see notifications inside the board.
+  /// Admin sees all; owner sees own-property events; supervisor sees assigned-property events.
   static bool canSeeNotifications(AppUser user) {
-    return user.role == UserRole.admin;
+    return user.role == UserRole.admin ||
+        user.role == UserRole.owner ||
+        user.role == UserRole.supervisor;
   }
 
   /// Whether [user] can assign supervisors to a property.
@@ -230,25 +231,24 @@ class Policy {
           NavItem.settings,
         ];
       case UserRole.owner:
-        // Owner sees everything EXCEPT auditorías. The Users page is
-        // scoped on the backend to users they created (their supervisors
-        // and through them, the workers their supervisors made).
+        // Owner sees everything. Users page is scoped on the backend.
         return const [
           NavItem.inicio,
           NavItem.todo,
           NavItem.archive,
           NavItem.users,
+          NavItem.audit,
           NavItem.settings,
         ];
       case UserRole.supervisor:
-        // Supervisor: no settings, no audit, no notifications page.
-        // Notifications are seen only inside the board. Users page is
-        // limited to those they created (cleaning/operator/maintenance).
+        // Supervisor: no settings, no global audit page. Notifications are
+        // scoped to their assigned properties.
         return const [
           NavItem.inicio,
           NavItem.todo,
           NavItem.archive,
           NavItem.users,
+          NavItem.audit,
         ];
       case UserRole.operator:
         return const [
@@ -285,9 +285,11 @@ class Policy {
     if (route.startsWith('/webhooks')) {
       return user.role == UserRole.admin || user.role == UserRole.owner;
     }
-    // Notifications page: admin only (others see notifications in-board).
+    // Notifications page: admin, owner, supervisor.
     if (route.startsWith('/notifications')) {
-      return user.role == UserRole.admin;
+      return user.role == UserRole.admin ||
+          user.role == UserRole.owner ||
+          user.role == UserRole.supervisor;
     }
     // Allow login + debug + everything else by default
     return true;

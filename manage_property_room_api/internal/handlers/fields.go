@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jose/manage_property_room_api/internal/domain"
+	"github.com/jose/manage_property_room_api/internal/events"
 	"github.com/jose/manage_property_room_api/internal/httpx"
 	"github.com/jose/manage_property_room_api/internal/store"
 )
@@ -73,6 +74,7 @@ func (h *FieldsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "create", "field", f.ID, f.Label)
+	events.Publish(events.Event{Type: "field.created", Entity: "field", EntityID: f.ID, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusCreated, f)
 }
 
@@ -103,6 +105,7 @@ func (h *FieldsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "update", "field", f.ID, f.Label)
+	events.Publish(events.Event{Type: "field.updated", Entity: "field", EntityID: f.ID, ActorID: httpx.UserIDFrom(r.Context())})
 	httpx.WriteJSON(w, http.StatusOK, f)
 }
 
@@ -122,6 +125,7 @@ func (h *FieldsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		httpx.HandleError(w, err); return
 	}
 	recordAudit(r.Context(), h.Store, "delete", "field", id, fLabel)
+	events.Publish(events.Event{Type: "field.deleted", Entity: "field", EntityID: id, ActorID: httpx.UserIDFrom(r.Context())})
 	w.WriteHeader(http.StatusNoContent)
 }
 

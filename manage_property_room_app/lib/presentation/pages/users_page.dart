@@ -108,7 +108,7 @@ class _UsersTab extends ConsumerWidget {
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
                   const Spacer(),
                   FilledButton.icon(
-                    onPressed: () => _showEditor(context, ref, null, visibleProps, groupsAsync.valueOrNull ?? []),
+                    onPressed: () => _showEditor(context, ref, null, visibleProps, groupsAsync.valueOrNull ?? [], currentUser),
                     icon: const Icon(Icons.person_add_outlined, size: 16),
                     label: const Text('Añadir'),
                     style: FilledButton.styleFrom(
@@ -129,7 +129,7 @@ class _UsersTab extends ConsumerWidget {
                   user: users[i],
                   properties: allProps,
                   groups: groupsAsync.valueOrNull ?? [],
-                  onEdit: () => _showEditor(context, ref, users[i], visibleProps, groupsAsync.valueOrNull ?? []),
+                  onEdit: () => _showEditor(context, ref, users[i], visibleProps, groupsAsync.valueOrNull ?? [], currentUser),
                   onDelete: () => ref.read(usersProvider.notifier).deleteUser(users[i].id),
                 ),
               ),
@@ -139,14 +139,14 @@ class _UsersTab extends ConsumerWidget {
     );
   }
 
-  void _showEditor(BuildContext context, WidgetRef ref, AppUser? existing, List<Property> props, List<Group> groups) {
+  void _showEditor(BuildContext context, WidgetRef ref, AppUser? existing, List<Property> props, List<Group> groups, AppUser? currentUser) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       enableDrag: false,
       useRootNavigator: true,
       barrierColor: Colors.black54,
-      builder: (_) => _UserEditorSheet(existing: existing, properties: props, groups: groups, ref: ref),
+      builder: (_) => _UserEditorSheet(existing: existing, properties: props, groups: groups, ref: ref, currentUser: currentUser),
     );
   }
 }
@@ -220,12 +220,13 @@ class _UserTile extends StatelessWidget {
 // ─────────────────────────────────────────
 
 class _UserEditorSheet extends StatefulWidget {
-  const _UserEditorSheet({required this.existing, required this.properties, required this.groups, required this.ref});
+  const _UserEditorSheet({required this.existing, required this.properties, required this.groups, required this.ref, required this.currentUser});
 
   final AppUser? existing;
   final List<Property> properties;
   final List<Group> groups;
   final WidgetRef ref;
+  final AppUser? currentUser;
 
   @override
   State<_UserEditorSheet> createState() => _UserEditorSheetState();
@@ -243,6 +244,18 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
 
   bool get _isNew => widget.existing == null;
 
+  List<UserRole> get _allowedRoles {
+    final actor = widget.currentUser?.role;
+    switch (actor) {
+      case UserRole.owner:
+        return const [UserRole.supervisor];
+      case UserRole.supervisor:
+        return const [UserRole.cleaning, UserRole.maintenance];
+      default:
+        return UserRole.values;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -251,7 +264,7 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
     _initialsCtrl = TextEditingController(text: u?.initials ?? '');
     _emailCtrl = TextEditingController();
     _passwordCtrl = TextEditingController();
-    _role = u?.role ?? UserRole.cleaning;
+    _role = u?.role ?? _allowedRoles.first;
     // For workers: pre-select groups they belong to.
     // For owner/supervisor: derive from the properties list (source of truth).
     if (u == null) {
@@ -332,7 +345,7 @@ class _UserEditorSheetState extends State<_UserEditorSheet> {
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
-              children: UserRole.values.map((r) {
+              children: _allowedRoles.map((r) {
                 return ChoiceChip(
                   label: Text(_roleLabel(r)),
                   selected: _role == r,

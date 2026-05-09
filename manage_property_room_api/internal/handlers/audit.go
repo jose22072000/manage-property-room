@@ -34,8 +34,13 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 	case domain.RoleAdmin:
 		events, err = h.Store.Audit().List(ctx, limit)
 	case domain.RoleOwner:
-		// Owner sees only events from their properties
 		props, propErr := h.Store.Properties().ListByOwner(ctx, actorID)
+		if propErr != nil { httpx.HandleError(w, propErr); return }
+		ids := make([]string, 0, len(props))
+		for _, p := range props { ids = append(ids, p.ID) }
+		events, err = h.Store.Audit().ListByPropertyIDs(ctx, ids, limit)
+	case domain.RoleSupervisor:
+		props, propErr := h.Store.Properties().ListBySupervisor(ctx, actorID)
 		if propErr != nil { httpx.HandleError(w, propErr); return }
 		ids := make([]string, 0, len(props))
 		for _, p := range props { ids = append(ids, p.ID) }
