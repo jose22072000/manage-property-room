@@ -36,6 +36,9 @@ dependencies:
   # Backend HTTP client (FASE 7-LINK)
   http: ^1.6.0
 
+  # URL launcher (open links in browser / download APK)
+  url_launcher: ^6.3.0
+
   # Image picker (web file + mobile camera/gallery)
   image_picker: ^1.1.2
 

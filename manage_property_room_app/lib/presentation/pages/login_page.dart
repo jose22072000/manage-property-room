@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../application/notifiers/notifiers.dart';
 import '../../application/providers/api_providers.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../application/providers/repo_providers.dart';
 import '../../core/background_notif_service.dart';
 import '../../core/errors.dart';
@@ -22,8 +23,8 @@ class LoginPage extends ConsumerStatefulWidget {
 
 class _LoginPageState extends ConsumerState<LoginPage> {
   final _formKey = GlobalKey<FormState>();
-  final _emailCtrl = TextEditingController(text: 'maria@app.local');
-  final _passCtrl = TextEditingController(text: 'admin123');
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
   bool _busy = false;
   bool _showPass = false;
   String? _error;
@@ -163,6 +164,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           controller: _emailCtrl,
                           keyboardType: TextInputType.emailAddress,
                           textInputAction: TextInputAction.next,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          autofillHints: const [],
                           style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14),
                           decoration: const InputDecoration(
                             hintText: 'email@ejemplo.com',
@@ -186,6 +190,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           controller: _passCtrl,
                           obscureText: !_showPass,
                           textInputAction: TextInputAction.done,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          autofillHints: const [],
                           onFieldSubmitted: (_) => _busy ? null : _submit(),
                           style: const TextStyle(color: Color(0xFF0F172A), fontSize: 14),
                           decoration: InputDecoration(
@@ -253,10 +260,72 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     ),
                   ),
                 ),
+                if (kIsWeb) ..._buildDownloadBanner(context),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  List<Widget> _buildDownloadBanner(BuildContext context) {
+    return [
+      const SizedBox(height: 32),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _downloadButton(
+            label: 'Android',
+            icon: Icons.android,
+            color: const Color(0xFF16A34A),
+            url: '${ref.read(apiBaseUrlProvider)}/download/app',
+          ),
+          const SizedBox(width: 12),
+          _downloadButton(
+            label: 'iOS',
+            icon: Icons.phone_iphone,
+            color: const Color(0xFF0369A1),
+            url: '${ref.read(apiBaseUrlProvider)}/download/ios',
+          ),
+        ],
+      ),
+    ];
+  }
+
+  Widget _downloadButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required String url,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: () async {
+        final uri = Uri.parse(url);
+        try {
+          // webOnlyWindowName: '_blank' abre en nueva pestaña sin pasar por canLaunchUrl
+          // (canLaunchUrl tiene un await que rompe el gesture de usuario → popup blocker)
+          await launchUrl(uri, webOnlyWindowName: '_blank');
+        } catch (_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('No se pudo abrir el enlace de descarga'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      },
+      icon: Icon(icon, size: 18, color: color),
+      label: Text(
+        label,
+        style: TextStyle(fontSize: 13, color: color),
+      ),
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: color),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
     );
   }

@@ -117,8 +117,11 @@ class BoardApi {
       );
 
   /// POST /cards/:id/toggle-done
-  Future<Map<String, dynamic>> toggleDone(String cardId) =>
-      _client.post<Map<String, dynamic>>('/cards/$cardId/toggle-done');
+  Future<Map<String, dynamic>> toggleDone(String cardId, {String cleanedBy = ''}) =>
+      _client.post<Map<String, dynamic>>(
+        '/cards/$cardId/toggle-done',
+        body: cleanedBy.isNotEmpty ? {'cleanedBy': cleanedBy} : null,
+      );
 
   /// POST /cards/reorder — { columnId, ids: [...] }
   Future<void> reorderCards(String columnId, List<String> ids) =>

@@ -14,7 +14,6 @@ import '../presentation/pages/settings_page.dart';
 import '../presentation/pages/users_page.dart';
 import '../presentation/pages/groups_page.dart';
 import '../presentation/pages/webhooks_page.dart';
-import '../presentation/pages/api_debug_page.dart';
 import '../presentation/pages/login_page.dart';
 import '../presentation/widgets/shared/app_shell.dart';
 
@@ -56,8 +55,7 @@ GoRouter buildRouter(WidgetRef ref) {
       // typed manually in the URL.
       if (user != null) {
         final route = state.matchedLocation;
-        // Always allow login + api debug
-        if (route == '/login' || route.startsWith('/api-debug')) return null;
+        if (route == '/login') return null;
         if (!Policy.canVisitRoute(user, route)) {
           return '/';
         }
@@ -112,10 +110,6 @@ GoRouter buildRouter(WidgetRef ref) {
           GoRoute(
             path: '/webhooks',
             pageBuilder: (_, state) => const NoTransitionPage(child: WebhooksPage()),
-          ),
-          GoRoute(
-            path: '/api-debug',
-            pageBuilder: (_, state) => const NoTransitionPage(child: ApiDebugPage()),
           ),
           // Board page INSIDE the shell (like React — AppShell wraps all pages)
           GoRoute(

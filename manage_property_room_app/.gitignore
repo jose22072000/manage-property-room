@@ -43,3 +43,19 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Windows Zone.Identifier files (WSL artifact)
+*.Identifier
+*Zone.Identifier
+
+# Null filename artifact (WSL/Windows)
+NUL
+
+# Environment files — never commit secrets
+.env
+.env.prod
+.env.local
+
+# Dev helper scripts
+write_props.py
+write_shell.py

@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Secrets — NEVER commit
+manage_property_room_api/.env
+manage_property_room_api/.env.prod
+
+# Windows WSL artifacts
+*.Identifier
+*Zone.Identifier
+NUL
+
+# Flutter build output
+manage_property_room_app/build/

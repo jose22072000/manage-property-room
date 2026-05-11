@@ -66,14 +66,20 @@ func New(d Deps) http.Handler {
 	eventsH := &handlers.EventsHandler{}
 
 	uploadDir := "/data/uploads"
+	downloadDir := "/data/downloads"
 	baseURL := os.Getenv("BASE_URL")
 	if baseURL == "" { baseURL = "http://localhost:8080" }
 	uploadH := &handlers.UploadHandler{UploadDir: uploadDir, BaseURL: baseURL}
+	downloadH := &handlers.DownloadHandler{DownloadDir: downloadDir}
 
 	// Static file serving (property images)
 	r.Get("/static/*", func(w http.ResponseWriter, req *http.Request) {
 		http.StripPrefix("/static/", http.FileServer(http.Dir(uploadDir))).ServeHTTP(w, req)
 	})
+
+	// Public APK / IPA download
+	r.Get("/download/app", downloadH.AppAPK)
+	r.Get("/download/ios", downloadH.AppIPA)
 
 	// Public
 	r.Get("/health", handlers.Health)

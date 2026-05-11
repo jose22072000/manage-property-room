@@ -149,11 +149,22 @@ func (h *CardsHandler) Move(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, c)
 }
 
+type toggleDoneRequest struct {
+	CleanedBy string `json:"cleanedBy"`
+}
+
 func (h *CardsHandler) ToggleDone(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	c, err := h.Store.Cards().GetByID(r.Context(), id)
 	if err != nil { httpx.HandleError(w, err); return }
+	var req toggleDoneRequest
+	_ = httpx.DecodeJSON(r, &req) // optional body — ignore parse error
 	c.IsDone = !c.IsDone
+	if c.IsDone && req.CleanedBy != "" {
+		c.CleanedBy = req.CleanedBy
+	} else if !c.IsDone {
+		c.CleanedBy = ""
+	}
 	if err := h.Store.Cards().Update(r.Context(), c); err != nil {
 		httpx.HandleError(w, err); return
 	}

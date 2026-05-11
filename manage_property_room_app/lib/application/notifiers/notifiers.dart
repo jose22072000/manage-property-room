@@ -735,11 +735,7 @@ class BoardNotifier extends FamilyAsyncNotifier<BoardState, String>
       state = AsyncData(BoardState(columns: prev.columns, cardsByColumn: newMap));
     }
     try {
-      final result = await ref.read(boardApiProvider).toggleDone(cardId);
-      final isNowDone = result['isDone'] as bool? ?? false;
-      if (isNowDone && cleanedBy.isNotEmpty) {
-        await ref.read(boardApiProvider).updateCard(cardId, {'cleanedBy': cleanedBy});
-      }
+      await ref.read(boardApiProvider).toggleDone(cardId, cleanedBy: cleanedBy);
       await _reload(userAction: true);
     } catch (e) {
       if (prev != null) state = AsyncData(prev);
